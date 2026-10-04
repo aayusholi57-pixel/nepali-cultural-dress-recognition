@@ -13,7 +13,9 @@ RUN python -m venv "$VIRTUAL_ENV" \
     && pip install --upgrade pip
 
 COPY requirements-docker.txt .
+
 RUN pip install --no-cache-dir -r requirements-docker.txt
+
 
 FROM python:3.10-slim AS runtime
 
@@ -34,6 +36,7 @@ RUN apt-get update \
     && useradd --create-home --shell /usr/sbin/nologin --uid 10001 appuser
 
 COPY --from=builder /opt/venv /opt/venv
+
 COPY --chown=appuser:appuser api/ ./api/
 COPY --chown=appuser:appuser src/ ./src/
 

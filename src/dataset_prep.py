@@ -1,479 +1,222 @@
+﻿import json
+import os
 from pathlib import Path
-from PIL import Image
-import random
-import yaml
-import json
-import csv
 
 
 DATASET_ROOT = Path(
-    "/home/ubuntu/.cache/kagglehub/datasets/"
-    "bimarshakhanal/nepali-cultural-dress-and-ornaments/"
-    "versions/1"
+    os.getenv("DATASET_ROOT", "data")
 )
 
-OUTPUT_ROOT = Path("data")
+SPLITS = ["train", "val", "test"]
 
-VAL_RATIO = 0.15
-SEED = 42
-
-random.seed(SEED)
-
-
-def load_classes():
-    yaml_path = DATASET_ROOT / "data.yaml"
-
-    with open(yaml_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-
-    return config["names"]
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".webp",
+}
 
 
-def find_images(directory):
-    extensions = {".jpg", ".jpeg", ".png"}
+def get_classes(split_dir):
+    """Return class folder names in a dataset split."""
+    if not split_dir.exists():
+        raise FileNotFoundError(
+            f"Dataset split not found: {split_dir}"
+        )
 
     return sorted(
-        [
-            p
-            for p in directory.iterdir()
-            if p.is_file()
-            and p.suffix.lower() in extensions
-        ]
+        folder.name
+        for folder in split_dir.iterdir()
+        if folder.is_dir()
     )
 
 
-def read_yolo_labels(label_path):
-    boxes = []
-
-    if not label_path.exists():
-        return boxes
-
-    with open(label_path, "r", encoding="utf-8") as f:
-        for line in f:
-            parts = line.strip().split()
-
-            if len(parts) != 5:
-                continue
-
-            class_id = int(parts[0])
-            x_center = float(parts[1])
-            y_center = float(parts[2])
-            width = float(parts[3])
-            height = float(parts[4])
-
-            boxes.append(
-                (
-                    class_id,
-                    x_center,
-                    y_center,
-                    width,
-                    height,
-                )
-            )
-
-    return boxes
-
-
-def yolo_to_pixels(
-    x_center,
-    y_center,
-    width,
-    height,
-    image_width,
-    image_height,
-):
-
-    x1 = int(
-        (x_center - width / 2) * image_width
-    )
-
-    y1 = int(
-        (y_center - height / 2) * image_height
-    )
-
-    x2 = int(
-        (x_center + width / 2) * image_width
-    )
-
-    y2 = int(
-        (y_center + height / 2) * image_height
-    )
-
-    x1 = max(0, min(x1, image_width))
-    y1 = max(0, min(y1, image_height))
-    x2 = max(0, min(x2, image_width))
-    y2 = max(0, min(y2, image_height))
-
-    return x1, y1, x2, y2
-
-
-def create_directories(class_names):
-
-    for split in ["train", "val", "test"]:
-
-        for class_name in class_names:
-
-            (
-                OUTPUT_ROOT
-                / split
-                / class_name
-            ).mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-
-
-def process_images(
-    image_paths,
-    source_split,
-    output_split,
-    class_names,
-    metadata,
-):
-
-    image_dir = (
-        DATASET_ROOT
-        / source_split
-        / "images"
-    )
-
-    label_dir = (
-        DATASET_ROOT
-        / source_split
-        / "labels"
-    )
-
-    total_crops = 0
-    total_images = 0
-
-    for image_path in image_paths:
-
-        label_path = (
-            label_dir
-            / f"{image_path.stem}.txt"
-        )
-
-        boxes = read_yolo_labels(label_path)
-
-        if not boxes:
-            continue
-
-        try:
-            image = Image.open(
-                image_path
-            ).convert("RGB")
-
-        except Exception as e:
-
-            print(
-                f"Skipping {image_path}: {e}"
-            )
-
-            continue
-
-        image_width, image_height = image.size
-
-        image_crops = 0
-
-        for box_index, box in enumerate(boxes):
-
-            (
-                class_id,
-                x_center,
-                y_center,
-                width,
-                height,
-            ) = box
-
-            if (
-                class_id < 0
-                or class_id >= len(class_names)
-            ):
-                continue
-
-            class_name = class_names[class_id]
-
-            (
-                x1,
-                y1,
-                x2,
-                y2,
-            ) = yolo_to_pixels(
-                x_center,
-                y_center,
-                width,
-                height,
-                image_width,
-                image_height,
-            )
-
-            if x2 <= x1 or y2 <= y1:
-                continue
-
-            crop = image.crop(
-                (x1, y1, x2, y2)
-            )
-
-            if (
-                crop.width < 10
-                or crop.height < 10
-            ):
-                continue
-
-            output_dir = (
-                OUTPUT_ROOT
-                / output_split
-                / class_name
-            )
-
-            output_name = (
-                f"{image_path.stem}"
-                f"_box_{box_index}.jpg"
-            )
-
-            output_path = (
-                output_dir
-                / output_name
-            )
-
-            crop.save(
-                output_path,
-                "JPEG",
-                quality=95,
-            )
-
-            metadata.append(
-                {
-                    "split": output_split,
-                    "class_id": class_id,
-                    "class_name": class_name,
-                    "source_image": image_path.name,
-                    "crop_path": str(output_path),
-                    "x1": x1,
-                    "y1": y1,
-                    "x2": x2,
-                    "y2": y2,
-                }
-            )
-
-            total_crops += 1
-            image_crops += 1
-
-        if image_crops > 0:
-            total_images += 1
-
-    print(
-        f"{output_split}: "
-        f"{total_images} images -> "
-        f"{total_crops} crops"
+def count_images(class_dir):
+    """Count supported image files inside a class directory."""
+    return sum(
+        1
+        for path in class_dir.iterdir()
+        if path.is_file()
+        and path.suffix.lower() in IMAGE_EXTENSIONS
     )
 
 
-def save_metadata(metadata):
+def validate_split(split):
+    """Validate one dataset split and return image statistics."""
+    split_dir = DATASET_ROOT / split
+    classes = get_classes(split_dir)
 
-    path = OUTPUT_ROOT / "metadata.csv"
+    statistics = {}
 
-    fields = [
-        "split",
-        "class_id",
-        "class_name",
-        "source_image",
-        "crop_path",
-        "x1",
-        "y1",
-        "x2",
-        "y2",
-    ]
+    for class_name in classes:
+        class_dir = split_dir / class_name
+        statistics[class_name] = count_images(class_dir)
 
-    with open(
-        path,
-        "w",
-        newline="",
-        encoding="utf-8",
-    ) as f:
-
-        writer = csv.DictWriter(
-            f,
-            fieldnames=fields,
-        )
-
-        writer.writeheader()
-        writer.writerows(metadata)
+    return classes, statistics
 
 
 def save_classes(class_names):
-
-    path = OUTPUT_ROOT / "classes.json"
+    """Save class mapping for reproducible inference."""
+    output_path = DATASET_ROOT / "classes.json"
 
     data = {
         "num_classes": len(class_names),
         "classes": {
-            str(i): name
-            for i, name in enumerate(class_names)
+            str(index): name
+            for index, name in enumerate(class_names)
         },
     }
 
     with open(
-        path,
+        output_path,
         "w",
         encoding="utf-8",
-    ) as f:
-
+    ) as file:
         json.dump(
             data,
-            f,
+            file,
             ensure_ascii=False,
             indent=2,
         )
 
+    print(f"\nClass mapping saved to: {output_path}")
 
-def print_statistics(metadata, class_names):
+
+def main():
+    print("=" * 60)
+    print("NEPALI CULTURAL DRESS")
+    print("CLASSIFICATION DATASET VALIDATION")
+    print("=" * 60)
+
+    print(f"\nDataset root: {DATASET_ROOT.resolve()}")
+
+    if not DATASET_ROOT.exists():
+        raise FileNotFoundError(
+            f"Dataset root not found: {DATASET_ROOT}"
+        )
+
+    split_data = {}
+
+    for split in SPLITS:
+        print(f"\nChecking {split.upper()} dataset...")
+
+        classes, statistics = validate_split(split)
+
+        split_data[split] = {
+            "classes": classes,
+            "statistics": statistics,
+        }
+
+        total_images = sum(statistics.values())
+
+        print(f"Classes: {len(classes)}")
+        print(f"Images: {total_images}")
+
+    train_classes = split_data["train"]["classes"]
+
+    print("\n" + "=" * 60)
+    print("CLASS CONSISTENCY CHECK")
+    print("=" * 60)
+
+    for split in ["val", "test"]:
+        current_classes = split_data[split]["classes"]
+
+        missing = sorted(
+            set(train_classes) - set(current_classes)
+        )
+
+        extra = sorted(
+            set(current_classes) - set(train_classes)
+        )
+
+        if missing:
+            print(
+                f"\n{split.upper()} missing classes:"
+            )
+            for name in missing:
+                print(f"  - {name}")
+
+        if extra:
+            print(
+                f"\n{split.upper()} has unexpected classes:"
+            )
+            for name in extra:
+                print(f"  - {name}")
+
+        if not missing and not extra:
+            print(
+                f"{split.upper()}: OK"
+            )
+
+        if split == "val" and split_data["val"]["classes"] != train_classes:
+            raise RuntimeError(
+                "Train and validation class folders are inconsistent."
+            )
+
+    test_missing = sorted(
+        set(train_classes) - set(split_data["test"]["classes"])
+    )
+
+    test_extra = sorted(
+        set(split_data["test"]["classes"]) - set(train_classes)
+    )
+
+    if test_missing:
+        print(
+            "\nWARNING: Test split is missing classes:"
+        )
+
+        for class_name in test_missing:
+            print(f"  - {class_name}")
+
+    if test_extra:
+        raise RuntimeError(
+            "Test dataset contains classes that are not present "
+            "in the training dataset."
+        )
 
     print("\n" + "=" * 60)
     print("CLASS DISTRIBUTION")
     print("=" * 60)
 
-    for split in ["train", "val", "test"]:
+    for index, class_name in enumerate(train_classes):
+        train_count = split_data["train"]["statistics"][class_name]
+        val_count = split_data["val"]["statistics"][class_name]
+        test_count = split_data["test"]["statistics"].get(class_name, 0)
 
-        print(f"\n{split.upper()}")
+        print(
+            f"{index:2d} | "
+            f"{class_name:30s} | "
+            f"train={train_count:4d} | "
+            f"val={val_count:4d} | "
+            f"test={test_count:4d}"
+        )
 
-        split_data = [
-            item
-            for item in metadata
-            if item["split"] == split
-        ]
+    empty_classes = []
 
-        for class_id, class_name in enumerate(
-            class_names
-        ):
+    for split in SPLITS:
+        for class_name, count in split_data[split]["statistics"].items():
+            if count == 0:
+                empty_classes.append(
+                    f"{split}/{class_name}"
+                )
 
-            count = sum(
-                1
-                for item in split_data
-                if item["class_id"] == class_id
-            )
+    if empty_classes:
+        print("\nWARNING: Empty class folders found:")
 
-            print(
-                f"{class_id:2d} | "
-                f"{class_name:30s} | "
-                f"{count}"
-            )
+        for item in empty_classes:
+            print(f"  - {item}")
 
+        raise RuntimeError(
+            "One or more class folders contain no images."
+        )
 
-def main():
-
-    print("=" * 60)
-    print("NEPALI CULTURAL DRESS")
-    print("YOLO -> RESNET50 CLASSIFICATION DATASET")
-    print("=" * 60)
-
-    class_names = load_classes()
-
-    print(
-        f"\nNumber of classes: "
-        f"{len(class_names)}"
-    )
-
-    for i, name in enumerate(class_names):
-        print(f"{i:2d} -> {name}")
-
-    create_directories(class_names)
-
-    train_image_dir = (
-        DATASET_ROOT
-        / "train"
-        / "images"
-    )
-
-    test_image_dir = (
-        DATASET_ROOT
-        / "test"
-        / "images"
-    )
-
-    train_images = find_images(
-        train_image_dir
-    )
-
-    test_images = find_images(
-        test_image_dir
-    )
-
-    print(
-        f"\nOriginal train images: "
-        f"{len(train_images)}"
-    )
-
-    print(
-        f"Official test images: "
-        f"{len(test_images)}"
-    )
-
-    random.shuffle(train_images)
-
-    val_count = int(
-        len(train_images) * VAL_RATIO
-    )
-
-    val_images = train_images[:val_count]
-
-    new_train_images = train_images[val_count:]
-
-    print(
-        f"Training images: "
-        f"{len(new_train_images)}"
-    )
-
-    print(
-        f"Validation images: "
-        f"{len(val_images)}"
-    )
-
-    metadata = []
-
-    print("\nCreating crops...")
-
-    process_images(
-        new_train_images,
-        "train",
-        "train",
-        class_names,
-        metadata,
-    )
-
-    process_images(
-        val_images,
-        "train",
-        "val",
-        class_names,
-        metadata,
-    )
-
-    process_images(
-        test_images,
-        "test",
-        "test",
-        class_names,
-        metadata,
-    )
-
-    save_metadata(metadata)
-
-    save_classes(class_names)
-
-    print_statistics(
-        metadata,
-        class_names,
-    )
+    save_classes(train_classes)
 
     print("\n" + "=" * 60)
-    print("DATASET PREPARATION COMPLETE")
+    print("DATASET VALIDATION COMPLETE")
     print("=" * 60)
-
-    print(
-        f"\nOutput directory: "
-        f"{OUTPUT_ROOT.resolve()}"
-    )
 
 
 if __name__ == "__main__":

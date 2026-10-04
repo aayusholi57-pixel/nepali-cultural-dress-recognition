@@ -1,5 +1,6 @@
 import io
 import os
+from typing import cast
 
 import boto3
 import torch
@@ -277,11 +278,11 @@ class PredictorService:
 
         try:
 
-            image = Image.open(
+            loaded_image = Image.open(
                 io.BytesIO(image_bytes)
             )
 
-            image = image.convert(
+            loaded_image = loaded_image.convert(
                 "RGB"
             )
 
@@ -301,11 +302,13 @@ class PredictorService:
         # Transform
         # ----------------------------------------------------
 
-        tensor = self.transform(
-            image
-        ).unsqueeze(0)
+        input_tensor = cast(
+            torch.Tensor,
+            self.transform(loaded_image),
+        )
+        input_tensor = input_tensor.unsqueeze(0)
 
-        tensor = tensor.to(
+        input_tensor = input_tensor.to(
             DEVICE
         )
 
@@ -315,9 +318,7 @@ class PredictorService:
 
         with torch.no_grad():
 
-            outputs = self.model(
-                tensor
-            )
+            outputs = self.model(input_tensor)
 
             probabilities = F.softmax(
                 outputs,

@@ -104,8 +104,8 @@ def evaluate():
     # ========================================================
 
     model = NepaliDressClassifier(
-        num_classes=num_classes
-    )
+    num_classes=num_classes,
+    pretrained=False,)
 
     model.load_state_dict(
         checkpoint["state_dict"]
