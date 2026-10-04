@@ -16,11 +16,11 @@ jobs:
     steps:
 
       # ======================================================
-      # 1. Checkout repository
+      # 1. Checkout GitHub repository
       # ======================================================
 
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # ======================================================
       # 2. Deploy to EC2
@@ -28,10 +28,13 @@ jobs:
 
       - name: Deploy Application to EC2
         uses: appleboy/ssh-action@v1.2.5
+
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+
           script: |
 
             set -e
@@ -40,54 +43,60 @@ jobs:
             echo "STARTING DEPLOYMENT"
             echo "=========================================="
 
-            # ------------------------------------------------
-            # Application directory
-            # ------------------------------------------------
-
             APP_DIR="$HOME/nepali-cultural-dress-recognition"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
 
             # ------------------------------------------------
-            # Clone repository if it does not exist
+            # Create application directory if needed
             # ------------------------------------------------
 
-            if [ ! -d "$APP_DIR/.git" ]; then
+            mkdir -p "$APP_DIR"
 
-              echo "Repository not found."
-              echo "Cloning repository..."
+            cd "$APP_DIR"
 
-              git clone \
-                https://github.com/${{ github.repository }}.git \
-                "$APP_DIR"
+            # ------------------------------------------------
+            # Initialize Git if this directory was created
+            # manually before CI/CD was configured.
+            # ------------------------------------------------
+
+            if [ ! -d ".git" ]; then
+
+              echo "Git repository not found."
+              echo "Initializing existing application directory..."
+
+              git init
+
+              git remote add origin "$REPO_URL"
+
+            else
+
+              echo "Git repository already exists."
+
+              git remote set-url origin "$REPO_URL"
 
             fi
 
             # ------------------------------------------------
-            # Go to application directory
+            # Fetch latest GitHub code
             # ------------------------------------------------
 
-            cd "$APP_DIR"
-
-            echo "Application directory:"
-            pwd
-
-            # ------------------------------------------------
-            # Get latest code
-            # ------------------------------------------------
-
-            echo "Fetching latest code..."
+            echo "Fetching latest main branch..."
 
             git fetch origin main
 
-            git checkout main
+            # ------------------------------------------------
+            # Force local tracked files to match GitHub
+            #
+            # Important:
+            # data/ and .venv/ are untracked and are therefore
+            # preserved.
+            # ------------------------------------------------
+
+            git checkout -B main origin/main
 
             git reset --hard origin/main
 
-            # ------------------------------------------------
-            # Show deployed commit
-            # ------------------------------------------------
-
-            echo "Deployed commit:"
-
+            echo "Latest code deployed:"
             git log -1 --oneline
 
             # ------------------------------------------------
@@ -98,14 +107,16 @@ jobs:
 
             test -f Dockerfile
             test -f requirements-docker.txt
-            test -f docker-compose.yml
-            test -d api
-            test -d src
+            test -f requirements.txt
+            test -f api/main.py
+            test -f api/predictor.py
+            test -f api/schemas.py
+            test -f src/model.py
 
             echo "Required files found."
 
             # ------------------------------------------------
-            # Build latest Docker image
+            # Build Docker image
             # ------------------------------------------------
 
             echo "Building Docker image..."
@@ -115,7 +126,7 @@ jobs:
               .
 
             # ------------------------------------------------
-            # Stop/remove previous container
+            # Remove previous container
             # ------------------------------------------------
 
             echo "Removing previous container..."
@@ -137,15 +148,15 @@ jobs:
               nepali-dress-api:latest
 
             # ------------------------------------------------
-            # Wait for application startup
+            # Wait for FastAPI startup
             # ------------------------------------------------
 
             echo "Waiting for API startup..."
 
-            sleep 15
+            sleep 20
 
             # ------------------------------------------------
-            # Show container status
+            # Container status
             # ------------------------------------------------
 
             echo "Container status:"
@@ -168,24 +179,24 @@ jobs:
             echo "$HEALTH_RESPONSE"
 
             # ------------------------------------------------
-            # Verify model is loaded
+            # Verify model loaded
             # ------------------------------------------------
 
             echo "$HEALTH_RESPONSE" | grep \
               '"model_loaded":true'
 
             # ------------------------------------------------
-            # Show recent logs
+            # Show logs
             # ------------------------------------------------
 
-            echo "Recent container logs:"
+            echo "Recent application logs:"
 
             sudo docker logs \
               nepali_dress_api \
-              --tail 30
+              --tail 40
 
             # ------------------------------------------------
-            # Cleanup dangling images
+            # Remove unused Docker layers
             # ------------------------------------------------
 
             echo "Cleaning unused Docker images..."
