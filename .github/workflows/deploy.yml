@@ -44,100 +44,107 @@ jobs:
             echo "=========================================="
 
             APP_DIR="$HOME/nepali-cultural-dress-recognition"
+            BACKUP_DIR="$HOME/nepali-cultural-dress-recognition-backup"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
             # ------------------------------------------------
-            # Create application directory if needed
+            # Stop old container
             # ------------------------------------------------
 
-            mkdir -p "$APP_DIR"
+            echo "Stopping previous container..."
 
-            cd "$APP_DIR"
+            sudo docker rm -f nepali_dress_api 2>/dev/null || true
 
             # ------------------------------------------------
-            # Initialize Git if this directory was created
-            # manually before CI/CD was configured.
+            # Remove old manually-created project directory
+            #
+            # This removes the old EC2 copy containing data/,
+            # .venv/, and manually copied files.
+            #
+            # The trained model is NOT stored here.
+            # The model remains safely in S3.
             # ------------------------------------------------
 
-            if [ ! -d ".git" ]; then
+            if [ -d "$APP_DIR" ]; then
 
-              echo "Git repository not found."
-              echo "Initializing existing application directory..."
+              echo "Removing old application directory..."
 
-              git init
-
-              git remote add origin "$REPO_URL"
-
-            else
-
-              echo "Git repository already exists."
-
-              git remote set-url origin "$REPO_URL"
+              rm -rf "$APP_DIR"
 
             fi
 
             # ------------------------------------------------
-            # Fetch latest GitHub code
+            # Remove old backup if it exists
             # ------------------------------------------------
 
-            echo "Fetching latest main branch..."
+            if [ -d "$BACKUP_DIR" ]; then
 
-            git fetch origin main
+              rm -rf "$BACKUP_DIR"
+
+            fi
 
             # ------------------------------------------------
-            # Force local tracked files to match GitHub
-            #
-            # Important:
-            # data/ and .venv/ are untracked and are therefore
-            # preserved.
+            # Clone clean repository
             # ------------------------------------------------
 
-            git checkout -B main origin/main
+            echo "Cloning latest GitHub repository..."
 
-            git reset --hard origin/main
+            git clone \
+              --branch main \
+              "$REPO_URL" \
+              "$APP_DIR"
 
-            echo "Latest code deployed:"
+            cd "$APP_DIR"
+
+            # ------------------------------------------------
+            # Show deployed commit
+            # ------------------------------------------------
+
+            echo "=========================================="
+            echo "DEPLOYED COMMIT"
+            echo "=========================================="
+
             git log -1 --oneline
 
             # ------------------------------------------------
             # Verify required files
             # ------------------------------------------------
 
-            echo "Checking required files..."
+            echo "=========================================="
+            echo "CHECKING PROJECT FILES"
+            echo "=========================================="
 
             test -f Dockerfile
             test -f requirements-docker.txt
             test -f requirements.txt
+
             test -f api/main.py
             test -f api/predictor.py
             test -f api/schemas.py
+
             test -f src/model.py
 
-            echo "Required files found."
+            echo "All required files found."
 
             # ------------------------------------------------
             # Build Docker image
             # ------------------------------------------------
 
-            echo "Building Docker image..."
+            echo "=========================================="
+            echo "BUILDING DOCKER IMAGE"
+            echo "=========================================="
 
             sudo docker build \
               -t nepali-dress-api:latest \
               .
 
             # ------------------------------------------------
-            # Remove previous container
+            # Start container
             # ------------------------------------------------
 
-            echo "Removing previous container..."
-
-            sudo docker rm -f nepali_dress_api 2>/dev/null || true
-
-            # ------------------------------------------------
-            # Start new container
-            # ------------------------------------------------
-
-            echo "Starting new container..."
+            echo "=========================================="
+            echo "STARTING CONTAINER"
+            echo "=========================================="
 
             sudo docker run -d \
               --name nepali_dress_api \
@@ -148,18 +155,20 @@ jobs:
               nepali-dress-api:latest
 
             # ------------------------------------------------
-            # Wait for FastAPI startup
+            # Wait for FastAPI + S3 model loading
             # ------------------------------------------------
 
-            echo "Waiting for API startup..."
+            echo "Waiting for application startup..."
 
             sleep 20
 
             # ------------------------------------------------
-            # Container status
+            # Check container
             # ------------------------------------------------
 
-            echo "Container status:"
+            echo "=========================================="
+            echo "CONTAINER STATUS"
+            echo "=========================================="
 
             sudo docker ps \
               --filter "name=nepali_dress_api"
@@ -168,14 +177,15 @@ jobs:
             # Health check
             # ------------------------------------------------
 
-            echo "Running health check..."
+            echo "=========================================="
+            echo "HEALTH CHECK"
+            echo "=========================================="
 
             HEALTH_RESPONSE=$(curl \
               --fail \
               --silent \
               http://127.0.0.1:9000/health)
 
-            echo "Health response:"
             echo "$HEALTH_RESPONSE"
 
             # ------------------------------------------------
@@ -189,17 +199,21 @@ jobs:
             # Show logs
             # ------------------------------------------------
 
-            echo "Recent application logs:"
+            echo "=========================================="
+            echo "APPLICATION LOGS"
+            echo "=========================================="
 
             sudo docker logs \
               nepali_dress_api \
               --tail 40
 
             # ------------------------------------------------
-            # Remove unused Docker layers
+            # Docker cleanup
             # ------------------------------------------------
 
-            echo "Cleaning unused Docker images..."
+            echo "=========================================="
+            echo "DOCKER CLEANUP"
+            echo "=========================================="
 
             sudo docker image prune -f
 
