@@ -14,13 +14,14 @@ from src.model import NepaliDressClassifier
 # CONFIG
 # ============================================================
 
-S3_BUCKET = (
-    "nepali-cultural-dress-ai-"
-    "696822062401-ap-southeast-2-an"
+S3_BUCKET = os.getenv(
+    "S3_BUCKET",
+    "nepali-cultural-dress-ai-696822062401-ap-southeast-2-an",
 )
 
-S3_MODEL_KEY = (
-    "models/resnet50/best_resnet50.pth"
+S3_MODEL_KEY = os.getenv(
+    "S3_MODEL_KEY",
+    "models/resnet50/best_resnet50.pth",
 )
 
 DEVICE = torch.device(
@@ -66,20 +67,28 @@ class PredictorService:
     # ========================================================
 
     def _get_s3_client(self):
-
-        profile_name = os.getenv(
-            "AWS_PROFILE"
+        region = (
+            os.getenv("AWS_REGION")
+            or os.getenv("AWS_DEFAULT_REGION", "ap-southeast-2")
         )
+        profile_name = os.getenv("AWS_PROFILE")
 
         if profile_name:
+            try:
+                session = boto3.Session(
+                    profile_name=profile_name,
+                    region_name=region,
+                )
+                return session.client("s3")
+            except Exception as exc:
+                print(
+                    f"[WARNING] Could not load AWS_PROFILE '{profile_name}': {exc}"
+                )
+                print(
+                    "[INFO] Falling back to default AWS credential chain..."
+                )
 
-            session = boto3.Session(
-                profile_name=profile_name
-            )
-
-            return session.client("s3")
-
-        return boto3.client("s3")
+        return boto3.client("s3", region_name=region)
 
     # ========================================================
     # LOAD MODEL FROM S3
@@ -174,9 +183,9 @@ class PredictorService:
             # ------------------------------------------------
 
             self.model = NepaliDressClassifier(
-    num_classes=self.num_classes,
-    pretrained=False,
-)
+                num_classes=self.num_classes,
+                pretrained=False,
+            )
 
             # ------------------------------------------------
             # Load trained weights
@@ -223,13 +232,14 @@ class PredictorService:
             self.model = None
 
             print()
-            print(
-                "ERROR: Failed to load model."
-            )
-
-            print(
-                f"Reason: {exc}"
-            )
+            print("ERROR: Failed to load model.")
+            if exc.__class__.__name__ == "NoCredentialsError":
+                print(
+                    "Reason: AWS credentials are missing. Attach an EC2 IAM role "
+                    "or provide AWS credentials through the runtime environment."
+                )
+            else:
+                print(f"Reason: {exc}")
 
             raise
 

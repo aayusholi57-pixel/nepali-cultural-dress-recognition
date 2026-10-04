@@ -151,15 +151,11 @@ jobs:
             sudo docker image rm "$IMAGE_NAME" 2>/dev/null || true
 
             # ==================================================
-            # 5. Clean Docker build cache
+            # Build cache is retained between deployments for faster rebuilds.
+
             # ==================================================
-
-            echo "=========================================="
-            echo "CLEANING DOCKER BUILD CACHE"
-            echo "=========================================="
-
-            sudo docker builder prune -af || true
-
+            # 6. Remove old application directory
+            # ==================================================
             # ==================================================
             # 6. Remove old application directory
             # ==================================================
@@ -311,6 +307,8 @@ jobs:
               --restart unless-stopped \
               -e AWS_DEFAULT_REGION=ap-southeast-2 \
               -e AWS_REGION=ap-southeast-2 \
+              -e S3_BUCKET="${S3_BUCKET:-nepali-cultural-dress-ai-696822062401-ap-southeast-2-an}" \
+              -e S3_MODEL_KEY="${S3_MODEL_KEY:-models/resnet50/best_resnet50.pth}" \
               "$IMAGE_NAME"
 
             echo "Container started."
