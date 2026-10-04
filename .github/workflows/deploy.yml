@@ -16,7 +16,7 @@ jobs:
     steps:
 
       # ======================================================
-      # 1. Checkout GitHub repository
+      # 1. Checkout repository
       # ======================================================
 
       - name: Checkout Code
@@ -28,7 +28,6 @@ jobs:
 
       - name: Deploy Application to EC2
         uses: appleboy/ssh-action@v1.2.5
-
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
@@ -44,25 +43,18 @@ jobs:
             echo "=========================================="
 
             APP_DIR="$HOME/nepali-cultural-dress-recognition"
-            BACKUP_DIR="$HOME/nepali-cultural-dress-recognition-backup"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
             # ------------------------------------------------
-            # Stop old container
+            # Stop/remove previous container
             # ------------------------------------------------
 
-            echo "Stopping previous container..."
+            echo "Removing previous container..."
 
             sudo docker rm -f nepali_dress_api 2>/dev/null || true
 
             # ------------------------------------------------
-            # Remove old manually-created project directory
-            #
-            # This removes the old EC2 copy containing data/,
-            # .venv/, and manually copied files.
-            #
-            # The trained model is NOT stored here.
-            # The model remains safely in S3.
+            # Remove old manually-created application directory
             # ------------------------------------------------
 
             if [ -d "$APP_DIR" ]; then
@@ -74,17 +66,7 @@ jobs:
             fi
 
             # ------------------------------------------------
-            # Remove old backup if it exists
-            # ------------------------------------------------
-
-            if [ -d "$BACKUP_DIR" ]; then
-
-              rm -rf "$BACKUP_DIR"
-
-            fi
-
-            # ------------------------------------------------
-            # Clone clean repository
+            # Clone latest repository
             # ------------------------------------------------
 
             echo "Cloning latest GitHub repository..."
@@ -155,15 +137,7 @@ jobs:
               nepali-dress-api:latest
 
             # ------------------------------------------------
-            # Wait for FastAPI + S3 model loading
-            # ------------------------------------------------
-
-            echo "Waiting for application startup..."
-
-            sleep 20
-
-            # ------------------------------------------------
-            # Check container
+            # Container status
             # ------------------------------------------------
 
             echo "=========================================="
@@ -174,29 +148,116 @@ jobs:
               --filter "name=nepali_dress_api"
 
             # ------------------------------------------------
-            # Health check
+            # Health check with retry
             # ------------------------------------------------
 
             echo "=========================================="
             echo "HEALTH CHECK"
             echo "=========================================="
 
-            HEALTH_RESPONSE=$(curl \
+            MAX_RETRIES=18
+            RETRY_COUNT=0
+            HEALTH_CHECK_PASSED=false
+
+            while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+
+              echo "Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+
+              if HEALTH_RESPONSE=$(curl \
+                --fail \
+                --silent \
+                --show-error \
+                http://127.0.0.1:9000/health); then
+
+                echo "Health response:"
+                echo "$HEALTH_RESPONSE"
+
+                if echo "$HEALTH_RESPONSE" | grep -q '"model_loaded":true'; then
+
+                  HEALTH_CHECK_PASSED=true
+
+                  echo "Health check passed."
+
+                  break
+
+                fi
+
+              else
+
+                echo "API is not ready yet."
+
+              fi
+
+              # ------------------------------------------------
+              # Check whether container is still running
+              # ------------------------------------------------
+
+              if ! sudo docker ps \
+                --format '{{.Names}}' \
+                | grep -q '^nepali_dress_api$'; then
+
+                echo "ERROR: Container is no longer running."
+
+                echo "Container logs:"
+
+                sudo docker logs \
+                  nepali_dress_api \
+                  --tail 80
+
+                exit 1
+
+              fi
+
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+
+              echo "Waiting 10 seconds before retry..."
+
+              sleep 10
+
+            done
+
+            # ------------------------------------------------
+            # Fail if health check never passed
+            # ------------------------------------------------
+
+            if [ "$HEALTH_CHECK_PASSED" = false ]; then
+
+              echo "=========================================="
+              echo "HEALTH CHECK FAILED"
+              echo "=========================================="
+
+              echo "Container status:"
+
+              sudo docker ps -a \
+                --filter "name=nepali_dress_api"
+
+              echo "Container logs:"
+
+              sudo docker logs \
+                nepali_dress_api \
+                --tail 100
+
+              exit 1
+
+            fi
+
+            # ------------------------------------------------
+            # Model information
+            # ------------------------------------------------
+
+            echo "=========================================="
+            echo "MODEL INFORMATION"
+            echo "=========================================="
+
+            curl \
               --fail \
               --silent \
-              http://127.0.0.1:9000/health)
+              http://127.0.0.1:9000/model-info
 
-            echo "$HEALTH_RESPONSE"
-
-            # ------------------------------------------------
-            # Verify model loaded
-            # ------------------------------------------------
-
-            echo "$HEALTH_RESPONSE" | grep \
-              '"model_loaded":true'
+            echo
 
             # ------------------------------------------------
-            # Show logs
+            # Final application logs
             # ------------------------------------------------
 
             echo "=========================================="
