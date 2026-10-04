@@ -8,24 +8,25 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: nepali-cultural-dress-deployment
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
 
     steps:
-
       # ======================================================
       # 1. Checkout repository
       # ======================================================
-
       - name: Checkout Code
         uses: actions/checkout@v7
 
       # ======================================================
       # 2. Deploy to EC2
       # ======================================================
-
       - name: Deploy Application to EC2
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -35,7 +36,6 @@ jobs:
           script_stop: true
 
           script: |
-
             set -e
 
             echo "=========================================="
@@ -45,53 +45,119 @@ jobs:
             APP_DIR="$HOME/nepali-cultural-dress-recognition"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
-            # ------------------------------------------------
-            # Stop/remove previous container
-            # ------------------------------------------------
+            CONTAINER_NAME="nepali_dress_api"
+            IMAGE_NAME="nepali-dress-api:latest"
 
-            echo "Removing previous container..."
+            # ==================================================
+            # 1. Docker / disk information
+            # ==================================================
+            echo "=========================================="
+            echo "DOCKER STATUS"
+            echo "=========================================="
 
-            sudo docker rm -f nepali_dress_api 2>/dev/null || true
+            sudo docker version
+            sudo docker ps -a
+            df -h
 
-            # ------------------------------------------------
-            # Remove old manually-created application directory
-            # ------------------------------------------------
+            # ==================================================
+            # 2. Remove old Nepali Dress container
+            # ==================================================
+            echo "=========================================="
+            echo "CLEANING PREVIOUS CONTAINER"
+            echo "=========================================="
 
-            if [ -d "$APP_DIR" ]; then
+            OLD_CONTAINER_ID=$(sudo docker ps -aq \
+              --filter "name=^/${CONTAINER_NAME}$" || true)
 
-              echo "Removing old application directory..."
+            if [ -n "$OLD_CONTAINER_ID" ]; then
+              echo "Found existing container: $OLD_CONTAINER_ID"
 
-              rm -rf "$APP_DIR"
+              echo "Stopping existing container..."
+              sudo docker stop "$OLD_CONTAINER_ID" 2>/dev/null || true
 
+              echo "Removing existing container..."
+              sudo docker rm -f "$OLD_CONTAINER_ID" 2>/dev/null || true
+            else
+              echo "No existing Nepali Dress container found."
             fi
 
-            # ------------------------------------------------
-            # Clone latest repository
-            # ------------------------------------------------
+            # ==================================================
+            # 3. Verify container name is free
+            # ==================================================
+            echo "=========================================="
+            echo "VERIFYING CONTAINER NAME"
+            echo "=========================================="
 
-            echo "Cloning latest GitHub repository..."
+            REMAINING_CONTAINER=$(sudo docker ps -aq \
+              --filter "name=^/${CONTAINER_NAME}$" || true)
+
+            if [ -n "$REMAINING_CONTAINER" ]; then
+              echo "ERROR: Container name is still occupied."
+              sudo docker inspect "$REMAINING_CONTAINER" || true
+              exit 1
+            fi
+
+            echo "Container name is available."
+
+            # ==================================================
+            # 4. Remove only old Nepali Dress image
+            # ==================================================
+            echo "=========================================="
+            echo "REMOVING OLD IMAGE"
+            echo "=========================================="
+
+            sudo docker image rm "$IMAGE_NAME" 2>/dev/null || true
+
+            # ==================================================
+            # 5. Clean Docker build cache
+            # ==================================================
+            echo "=========================================="
+            echo "CLEANING DOCKER BUILD CACHE"
+            echo "=========================================="
+
+            sudo docker builder prune -af || true
+
+            # ==================================================
+            # 6. Remove old application directory
+            # ==================================================
+            echo "=========================================="
+            echo "REMOVING OLD APPLICATION DIRECTORY"
+            echo "=========================================="
+
+            if [ -d "$APP_DIR" ]; then
+              echo "Removing old application directory..."
+              rm -rf "$APP_DIR"
+            else
+              echo "No previous application directory found."
+            fi
+
+            # ==================================================
+            # 7. Clone latest GitHub repository
+            # ==================================================
+            echo "=========================================="
+            echo "CLONING LATEST GITHUB REPOSITORY"
+            echo "=========================================="
 
             git clone \
               --branch main \
+              --single-branch \
               "$REPO_URL" \
               "$APP_DIR"
 
             cd "$APP_DIR"
 
-            # ------------------------------------------------
-            # Show deployed commit
-            # ------------------------------------------------
-
+            # ==================================================
+            # 8. Show deployed commit
+            # ==================================================
             echo "=========================================="
             echo "DEPLOYED COMMIT"
             echo "=========================================="
 
             git log -1 --oneline
 
-            # ------------------------------------------------
-            # Verify required files
-            # ------------------------------------------------
-
+            # ==================================================
+            # 9. Verify required files
+            # ==================================================
             echo "=========================================="
             echo "CHECKING PROJECT FILES"
             echo "=========================================="
@@ -99,58 +165,87 @@ jobs:
             test -f Dockerfile
             test -f requirements-docker.txt
             test -f requirements.txt
-
+            test -f api/__init__.py
             test -f api/main.py
             test -f api/predictor.py
             test -f api/schemas.py
-
+            test -f src/__init__.py
             test -f src/model.py
 
             echo "All required files found."
 
-            # ------------------------------------------------
-            # Build Docker image
-            # ------------------------------------------------
+            # ==================================================
+            # 10. Verify deployment model configuration
+            # ==================================================
+            echo "=========================================="
+            echo "CHECKING MODEL CONFIGURATION"
+            echo "=========================================="
 
+            if grep -q "pretrained=False" api/predictor.py; then
+              echo "Predictor correctly uses pretrained=False."
+            else
+              echo "ERROR: api/predictor.py does not contain pretrained=False."
+              exit 1
+            fi
+
+            if grep -q "pretrained:" src/model.py; then
+              echo "Model supports pretrained parameter."
+            else
+              echo "ERROR: src/model.py does not support pretrained parameter."
+              exit 1
+            fi
+
+            if grep -q "torch==2.14.1+cpu" requirements-docker.txt; then
+              echo "CPU-only PyTorch configuration detected."
+            else
+              echo "ERROR: CPU-only PyTorch version not found."
+              exit 1
+            fi
+
+            # ==================================================
+            # 11. Build Docker image
+            # ==================================================
             echo "=========================================="
             echo "BUILDING DOCKER IMAGE"
             echo "=========================================="
 
             sudo docker build \
-              -t nepali-dress-api:latest \
+              --pull \
+              -t "$IMAGE_NAME" \
               .
 
-            # ------------------------------------------------
-            # Start container
-            # ------------------------------------------------
+            echo "Docker image built successfully."
 
+            # ==================================================
+            # 12. Start container
+            # ==================================================
             echo "=========================================="
             echo "STARTING CONTAINER"
             echo "=========================================="
 
             sudo docker run -d \
-              --name nepali_dress_api \
+              --name "$CONTAINER_NAME" \
               -p 9000:8000 \
               --restart unless-stopped \
               -e AWS_DEFAULT_REGION=ap-southeast-2 \
               -e AWS_REGION=ap-southeast-2 \
-              nepali-dress-api:latest
+              "$IMAGE_NAME"
 
-            # ------------------------------------------------
-            # Container status
-            # ------------------------------------------------
+            echo "Container started."
 
+            # ==================================================
+            # 13. Show container status
+            # ==================================================
             echo "=========================================="
             echo "CONTAINER STATUS"
             echo "=========================================="
 
-            sudo docker ps \
-              --filter "name=nepali_dress_api"
+            sudo docker ps -a \
+              --filter "name=^/${CONTAINER_NAME}$"
 
-            # ------------------------------------------------
-            # Health check with retry
-            # ------------------------------------------------
-
+            # ==================================================
+            # 14. Health check with retry
+            # ==================================================
             echo "=========================================="
             echo "HEALTH CHECK"
             echo "=========================================="
@@ -167,59 +262,53 @@ jobs:
                 --fail \
                 --silent \
                 --show-error \
+                --max-time 10 \
                 http://127.0.0.1:9000/health); then
 
                 echo "Health response:"
                 echo "$HEALTH_RESPONSE"
 
                 if echo "$HEALTH_RESPONSE" | grep -q '"model_loaded":true'; then
-
                   HEALTH_CHECK_PASSED=true
-
                   echo "Health check passed."
-
                   break
-
+                else
+                  echo "API responded, but model is not loaded yet."
                 fi
 
               else
-
                 echo "API is not ready yet."
-
               fi
 
-              # ------------------------------------------------
+              # =================================================
               # Check whether container is still running
-              # ------------------------------------------------
-
+              # =================================================
               if ! sudo docker ps \
                 --format '{{.Names}}' \
-                | grep -q '^nepali_dress_api$'; then
+                | grep -q "^${CONTAINER_NAME}$"; then
 
                 echo "ERROR: Container is no longer running."
 
-                echo "Container logs:"
+                echo "=========================================="
+                echo "CONTAINER LOGS"
+                echo "=========================================="
 
                 sudo docker logs \
-                  nepali_dress_api \
-                  --tail 80
+                  "$CONTAINER_NAME" \
+                  --tail 100 || true
 
                 exit 1
-
               fi
 
               RETRY_COUNT=$((RETRY_COUNT + 1))
 
               echo "Waiting 10 seconds before retry..."
-
               sleep 10
-
             done
 
-            # ------------------------------------------------
-            # Fail if health check never passed
-            # ------------------------------------------------
-
+            # ==================================================
+            # 15. Fail if health check never passed
+            # ==================================================
             if [ "$HEALTH_CHECK_PASSED" = false ]; then
 
               echo "=========================================="
@@ -227,24 +316,20 @@ jobs:
               echo "=========================================="
 
               echo "Container status:"
-
               sudo docker ps -a \
-                --filter "name=nepali_dress_api"
+                --filter "name=^/${CONTAINER_NAME}$"
 
               echo "Container logs:"
-
               sudo docker logs \
-                nepali_dress_api \
-                --tail 100
+                "$CONTAINER_NAME" \
+                --tail 150 || true
 
               exit 1
-
             fi
 
-            # ------------------------------------------------
-            # Model information
-            # ------------------------------------------------
-
+            # ==================================================
+            # 16. Model information
+            # ==================================================
             echo "=========================================="
             echo "MODEL INFORMATION"
             echo "=========================================="
@@ -252,31 +337,38 @@ jobs:
             curl \
               --fail \
               --silent \
+              --show-error \
+              --max-time 10 \
               http://127.0.0.1:9000/model-info
 
             echo
 
-            # ------------------------------------------------
-            # Final application logs
-            # ------------------------------------------------
-
+            # ==================================================
+            # 17. Final application logs
+            # ==================================================
             echo "=========================================="
             echo "APPLICATION LOGS"
             echo "=========================================="
 
             sudo docker logs \
-              nepali_dress_api \
-              --tail 40
+              "$CONTAINER_NAME" \
+              --tail 50
 
-            # ------------------------------------------------
-            # Docker cleanup
-            # ------------------------------------------------
-
+            # ==================================================
+            # 18. Final Docker cleanup
+            # ==================================================
             echo "=========================================="
             echo "DOCKER CLEANUP"
             echo "=========================================="
 
             sudo docker image prune -f
+
+            echo "=========================================="
+            echo "FINAL CONTAINER STATUS"
+            echo "=========================================="
+
+            sudo docker ps \
+              --filter "name=^/${CONTAINER_NAME}$"
 
             echo "=========================================="
             echo "DEPLOYMENT SUCCESSFUL"
