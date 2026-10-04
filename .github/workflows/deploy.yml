@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # ======================================================
       # 1. Checkout repository
       # ======================================================
@@ -29,6 +30,7 @@ jobs:
       # ======================================================
       - name: Deploy Application to EC2
         uses: appleboy/ssh-action@v1.2.5
+
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
@@ -36,32 +38,59 @@ jobs:
           script_stop: true
 
           script: |
+
             set -e
 
             echo "=========================================="
             echo "STARTING DEPLOYMENT"
             echo "=========================================="
 
+            # ==================================================
+            # Variables
+            # ==================================================
+
             APP_DIR="$HOME/nepali-cultural-dress-recognition"
+
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
             CONTAINER_NAME="nepali_dress_api"
+
             IMAGE_NAME="nepali-dress-api:latest"
+
+            HOST_PORT="9000"
+
+            CONTAINER_PORT="8000"
+
+            HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
+
+            MODEL_INFO_URL="http://127.0.0.1:${HOST_PORT}/model-info"
 
             # ==================================================
             # 1. Docker / disk information
             # ==================================================
+
             echo "=========================================="
             echo "DOCKER STATUS"
             echo "=========================================="
 
             sudo docker version
+
+            echo "------------------------------------------"
+            echo "Existing containers:"
+            echo "------------------------------------------"
+
             sudo docker ps -a
+
+            echo "------------------------------------------"
+            echo "Disk usage:"
+            echo "------------------------------------------"
+
             df -h
 
             # ==================================================
             # 2. Remove old Nepali Dress container
             # ==================================================
+
             echo "=========================================="
             echo "CLEANING PREVIOUS CONTAINER"
             echo "=========================================="
@@ -70,20 +99,28 @@ jobs:
               --filter "name=^/${CONTAINER_NAME}$" || true)
 
             if [ -n "$OLD_CONTAINER_ID" ]; then
-              echo "Found existing container: $OLD_CONTAINER_ID"
+
+              echo "Found existing container:"
+              echo "$OLD_CONTAINER_ID"
 
               echo "Stopping existing container..."
+
               sudo docker stop "$OLD_CONTAINER_ID" 2>/dev/null || true
 
               echo "Removing existing container..."
+
               sudo docker rm -f "$OLD_CONTAINER_ID" 2>/dev/null || true
+
             else
+
               echo "No existing Nepali Dress container found."
+
             fi
 
             # ==================================================
             # 3. Verify container name is free
             # ==================================================
+
             echo "=========================================="
             echo "VERIFYING CONTAINER NAME"
             echo "=========================================="
@@ -92,9 +129,13 @@ jobs:
               --filter "name=^/${CONTAINER_NAME}$" || true)
 
             if [ -n "$REMAINING_CONTAINER" ]; then
+
               echo "ERROR: Container name is still occupied."
+
               sudo docker inspect "$REMAINING_CONTAINER" || true
+
               exit 1
+
             fi
 
             echo "Container name is available."
@@ -102,6 +143,7 @@ jobs:
             # ==================================================
             # 4. Remove only old Nepali Dress image
             # ==================================================
+
             echo "=========================================="
             echo "REMOVING OLD IMAGE"
             echo "=========================================="
@@ -111,6 +153,7 @@ jobs:
             # ==================================================
             # 5. Clean Docker build cache
             # ==================================================
+
             echo "=========================================="
             echo "CLEANING DOCKER BUILD CACHE"
             echo "=========================================="
@@ -120,20 +163,27 @@ jobs:
             # ==================================================
             # 6. Remove old application directory
             # ==================================================
+
             echo "=========================================="
             echo "REMOVING OLD APPLICATION DIRECTORY"
             echo "=========================================="
 
             if [ -d "$APP_DIR" ]; then
+
               echo "Removing old application directory..."
+
               rm -rf "$APP_DIR"
+
             else
+
               echo "No previous application directory found."
+
             fi
 
             # ==================================================
             # 7. Clone latest GitHub repository
             # ==================================================
+
             echo "=========================================="
             echo "CLONING LATEST GITHUB REPOSITORY"
             echo "=========================================="
@@ -149,6 +199,7 @@ jobs:
             # ==================================================
             # 8. Show deployed commit
             # ==================================================
+
             echo "=========================================="
             echo "DEPLOYED COMMIT"
             echo "=========================================="
@@ -158,6 +209,7 @@ jobs:
             # ==================================================
             # 9. Verify required files
             # ==================================================
+
             echo "=========================================="
             echo "CHECKING PROJECT FILES"
             echo "=========================================="
@@ -165,10 +217,12 @@ jobs:
             test -f Dockerfile
             test -f requirements-docker.txt
             test -f requirements.txt
+
             test -f api/__init__.py
             test -f api/main.py
             test -f api/predictor.py
             test -f api/schemas.py
+
             test -f src/__init__.py
             test -f src/model.py
 
@@ -177,34 +231,51 @@ jobs:
             # ==================================================
             # 10. Verify deployment model configuration
             # ==================================================
+
             echo "=========================================="
             echo "CHECKING MODEL CONFIGURATION"
             echo "=========================================="
 
             if grep -q "pretrained=False" api/predictor.py; then
+
               echo "Predictor correctly uses pretrained=False."
+
             else
+
               echo "ERROR: api/predictor.py does not contain pretrained=False."
+
               exit 1
+
             fi
 
             if grep -q "pretrained:" src/model.py; then
+
               echo "Model supports pretrained parameter."
+
             else
+
               echo "ERROR: src/model.py does not support pretrained parameter."
+
               exit 1
+
             fi
 
             if grep -q "torch==2.14.1+cpu" requirements-docker.txt; then
+
               echo "CPU-only PyTorch configuration detected."
+
             else
+
               echo "ERROR: CPU-only PyTorch version not found."
+
               exit 1
+
             fi
 
             # ==================================================
             # 11. Build Docker image
             # ==================================================
+
             echo "=========================================="
             echo "BUILDING DOCKER IMAGE"
             echo "=========================================="
@@ -217,15 +288,26 @@ jobs:
             echo "Docker image built successfully."
 
             # ==================================================
-            # 12. Start container
+            # 12. Verify Docker image
             # ==================================================
+
+            echo "=========================================="
+            echo "VERIFYING DOCKER IMAGE"
+            echo "=========================================="
+
+            sudo docker images "$IMAGE_NAME"
+
+            # ==================================================
+            # 13. Start container
+            # ==================================================
+
             echo "=========================================="
             echo "STARTING CONTAINER"
             echo "=========================================="
 
             sudo docker run -d \
               --name "$CONTAINER_NAME" \
-              -p 9000:8000 \
+              -p "${HOST_PORT}:${CONTAINER_PORT}" \
               --restart unless-stopped \
               -e AWS_DEFAULT_REGION=ap-southeast-2 \
               -e AWS_REGION=ap-southeast-2 \
@@ -234,60 +316,69 @@ jobs:
             echo "Container started."
 
             # ==================================================
-            # 13. Show container status
+            # 14. Show initial container status
             # ==================================================
+
             echo "=========================================="
-            echo "CONTAINER STATUS"
+            echo "INITIAL CONTAINER STATUS"
             echo "=========================================="
 
             sudo docker ps -a \
               --filter "name=^/${CONTAINER_NAME}$"
 
             # ==================================================
-            # 14. Health check with retry
+            # 15. Show initial logs
             # ==================================================
+
+            echo "=========================================="
+            echo "INITIAL APPLICATION LOGS"
+            echo "=========================================="
+
+            sudo docker logs \
+              "$CONTAINER_NAME" \
+              --tail 50 || true
+
+            # ==================================================
+            # 16. Health check with retry
+            # ==================================================
+
             echo "=========================================="
             echo "HEALTH CHECK"
             echo "=========================================="
 
             MAX_RETRIES=18
-            RETRY_COUNT=0
+            RETRY_COUNT=1
+
             HEALTH_CHECK_PASSED=false
 
-            while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+            while [ "$RETRY_COUNT" -le "$MAX_RETRIES" ]; do
 
-              echo "Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+              echo ""
+              echo "------------------------------------------"
+              echo "Health check attempt ${RETRY_COUNT}/${MAX_RETRIES}"
+              echo "------------------------------------------"
 
-              if HEALTH_RESPONSE=$(curl \
-                --fail \
-                --silent \
-                --show-error \
-                --max-time 10 \
-                http://127.0.0.1:9000/health); then
+              # ------------------------------------------------
+              # Check whether container is running
+              # ------------------------------------------------
 
-                echo "Health response:"
-                echo "$HEALTH_RESPONSE"
+              CONTAINER_RUNNING=$(sudo docker inspect \
+                --format='{{.State.Running}}' \
+                "$CONTAINER_NAME" 2>/dev/null || echo "false")
 
-                if echo "$HEALTH_RESPONSE" | grep -q '"model_loaded":true'; then
-                  HEALTH_CHECK_PASSED=true
-                  echo "Health check passed."
-                  break
-                else
-                  echo "API responded, but model is not loaded yet."
-                fi
+              echo "Container running: $CONTAINER_RUNNING"
 
-              else
-                echo "API is not ready yet."
-              fi
+              if [ "$CONTAINER_RUNNING" != "true" ]; then
 
-              # =================================================
-              # Check whether container is still running
-              # =================================================
-              if ! sudo docker ps \
-                --format '{{.Names}}' \
-                | grep -q "^${CONTAINER_NAME}$"; then
-
+                echo ""
                 echo "ERROR: Container is no longer running."
+
+                echo "=========================================="
+                echo "CONTAINER STATUS"
+                echo "=========================================="
+
+                sudo docker ps -a \
+                  --filter "name=^/${CONTAINER_NAME}$"
 
                 echo "=========================================="
                 echo "CONTAINER LOGS"
@@ -295,41 +386,129 @@ jobs:
 
                 sudo docker logs \
                   "$CONTAINER_NAME" \
-                  --tail 100 || true
+                  --tail 150 || true
 
                 exit 1
+
+              fi
+
+              # ------------------------------------------------
+              # Call health endpoint
+              # ------------------------------------------------
+
+              HEALTH_RESPONSE=""
+
+              if HEALTH_RESPONSE=$(curl \
+                --fail \
+                --silent \
+                --show-error \
+                --max-time 10 \
+                "$HEALTH_URL" 2>&1); then
+
+                echo "Health endpoint responded."
+
+                echo "Health response:"
+                echo "$HEALTH_RESPONSE"
+
+                # ------------------------------------------------
+                # Verify model is actually loaded
+                # ------------------------------------------------
+
+                if echo "$HEALTH_RESPONSE" | grep -q '"model_loaded":true'; then
+
+                  HEALTH_CHECK_PASSED=true
+
+                  echo ""
+                  echo "=========================================="
+                  echo "HEALTH CHECK PASSED"
+                  echo "=========================================="
+
+                  break
+
+                else
+
+                  echo ""
+                  echo "API responded successfully."
+                  echo "However, model_loaded is not true yet."
+
+                fi
+
+              else
+
+                echo "API is not ready yet."
+
+                echo "Curl response:"
+                echo "$HEALTH_RESPONSE"
+
+              fi
+
+              # ------------------------------------------------
+              # Show recent logs
+              # ------------------------------------------------
+
+              echo ""
+              echo "Recent container logs:"
+
+              sudo docker logs \
+                "$CONTAINER_NAME" \
+                --tail 30 || true
+
+              # ------------------------------------------------
+              # Retry
+              # ------------------------------------------------
+
+              if [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; then
+
+                echo ""
+                echo "Waiting 10 seconds before next attempt..."
+
+                sleep 10
+
               fi
 
               RETRY_COUNT=$((RETRY_COUNT + 1))
 
-              echo "Waiting 10 seconds before retry..."
-              sleep 10
             done
 
             # ==================================================
-            # 15. Fail if health check never passed
+            # 17. Fail if health check never passed
             # ==================================================
+
             if [ "$HEALTH_CHECK_PASSED" = false ]; then
 
+              echo ""
               echo "=========================================="
               echo "HEALTH CHECK FAILED"
               echo "=========================================="
 
+              echo "The API did not become healthy."
+
+              echo ""
               echo "Container status:"
+
               sudo docker ps -a \
                 --filter "name=^/${CONTAINER_NAME}$"
 
+              echo ""
+              echo "Container inspect:"
+
+              sudo docker inspect "$CONTAINER_NAME" || true
+
+              echo ""
               echo "Container logs:"
+
               sudo docker logs \
                 "$CONTAINER_NAME" \
-                --tail 150 || true
+                --tail 200 || true
 
               exit 1
+
             fi
 
             # ==================================================
-            # 16. Model information
+            # 18. Model information
             # ==================================================
+
             echo "=========================================="
             echo "MODEL INFORMATION"
             echo "=========================================="
@@ -339,13 +518,14 @@ jobs:
               --silent \
               --show-error \
               --max-time 10 \
-              http://127.0.0.1:9000/model-info
+              "$MODEL_INFO_URL"
 
-            echo
+            echo ""
 
             # ==================================================
-            # 17. Final application logs
+            # 19. Final application logs
             # ==================================================
+
             echo "=========================================="
             echo "APPLICATION LOGS"
             echo "=========================================="
@@ -355,13 +535,18 @@ jobs:
               --tail 50
 
             # ==================================================
-            # 18. Final Docker cleanup
+            # 20. Docker cleanup
             # ==================================================
+
             echo "=========================================="
             echo "DOCKER CLEANUP"
             echo "=========================================="
 
             sudo docker image prune -f
+
+            # ==================================================
+            # 21. Final container status
+            # ==================================================
 
             echo "=========================================="
             echo "FINAL CONTAINER STATUS"
@@ -370,6 +555,49 @@ jobs:
             sudo docker ps \
               --filter "name=^/${CONTAINER_NAME}$"
 
+            # ==================================================
+            # 22. Final verification
+            # ==================================================
+
+            echo "=========================================="
+            echo "FINAL HEALTH VERIFICATION"
+            echo "=========================================="
+
+            FINAL_HEALTH=$(curl \
+              --fail \
+              --silent \
+              --show-error \
+              --max-time 10 \
+              "$HEALTH_URL")
+
+            echo "Final health response:"
+            echo "$FINAL_HEALTH"
+
+            # ==================================================
+            # 23. Deployment successful
+            # ==================================================
+
+            echo ""
             echo "=========================================="
             echo "DEPLOYMENT SUCCESSFUL"
+            echo "=========================================="
+
+            echo "Application:"
+            echo "Nepali Cultural Dress Recognition API"
+
+            echo "Container:"
+            echo "$CONTAINER_NAME"
+
+            echo "Image:"
+            echo "$IMAGE_NAME"
+
+            echo "API:"
+            echo "http://127.0.0.1:${HOST_PORT}"
+
+            echo "Health:"
+            echo "$HEALTH_URL"
+
+            echo "Model Info:"
+            echo "$MODEL_INFO_URL"
+
             echo "=========================================="
