@@ -24,23 +24,23 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
-# PYTHON DEPENDENCIES
+# CPU-ONLY PYTHON DEPENDENCIES
 # ============================================================
 
-COPY requirements.txt .
+COPY requirements-docker.txt .
 
 RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
+    && pip install -r requirements-docker.txt
 
 # ============================================================
-# APPLICATION CODE
+# APPLICATION
 # ============================================================
 
 COPY api/ ./api/
 COPY src/ ./src/
 
 # ============================================================
-# SECURITY
+# NON-ROOT USER
 # ============================================================
 
 RUN useradd \
@@ -52,13 +52,13 @@ RUN useradd \
 USER appuser
 
 # ============================================================
-# CONTAINER PORT
+# PORT
 # ============================================================
 
 EXPOSE 8000
 
 # ============================================================
-# START FASTAPI
+# START API
 # ============================================================
 
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
