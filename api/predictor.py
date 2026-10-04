@@ -1,0 +1,384 @@
+import io
+import os
+
+import boto3
+import torch
+import torch.nn.functional as F
+from PIL import Image, UnidentifiedImageError
+from torchvision import transforms
+
+from src.model import NepaliDressClassifier
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+S3_BUCKET = (
+    "nepali-cultural-dress-ai-"
+    "696822062401-ap-southeast-2-an"
+)
+
+S3_MODEL_KEY = (
+    "models/resnet50/best_resnet50.pth"
+)
+
+DEVICE = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
+)
+
+CONFIDENCE_THRESHOLD = 0.60
+
+IMAGE_SIZE = 224
+
+MEAN = [0.485, 0.456, 0.406]
+STD = [0.229, 0.224, 0.225]
+
+MAX_IMAGE_SIZE = 5 * 1024 * 1024
+
+
+# ============================================================
+# PREDICTOR SERVICE
+# ============================================================
+
+class PredictorService:
+
+    def __init__(self):
+
+        self.model = None
+        self.class_names = []
+        self.num_classes = 0
+        self.checkpoint_info = {}
+
+        self.transform = transforms.Compose([
+            transforms.Resize(
+                (IMAGE_SIZE, IMAGE_SIZE)
+            ),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                MEAN,
+                STD
+            ),
+        ])
+
+    # ========================================================
+    # CREATE S3 CLIENT
+    # ========================================================
+
+    def _get_s3_client(self):
+
+        profile_name = os.getenv(
+            "AWS_PROFILE"
+        )
+
+        if profile_name:
+
+            session = boto3.Session(
+                profile_name=profile_name
+            )
+
+            return session.client("s3")
+
+        return boto3.client("s3")
+
+    # ========================================================
+    # LOAD MODEL FROM S3
+    # ========================================================
+
+    def load_model_from_s3(self):
+
+        print("=" * 60)
+        print("LOADING RESNET50 MODEL")
+        print("=" * 60)
+
+        print(
+            f"Device: {DEVICE}"
+        )
+
+        print(
+            f"S3 Bucket: {S3_BUCKET}"
+        )
+
+        print(
+            f"S3 Model: {S3_MODEL_KEY}"
+        )
+
+        print()
+
+        try:
+
+            s3 = self._get_s3_client()
+
+            buffer = io.BytesIO()
+
+            print(
+                "Downloading model from S3..."
+            )
+
+            s3.download_fileobj(
+                S3_BUCKET,
+                S3_MODEL_KEY,
+                buffer
+            )
+
+            buffer.seek(0)
+
+            print(
+                "Model download completed."
+            )
+
+            # ------------------------------------------------
+            # Load checkpoint
+            # ------------------------------------------------
+
+            checkpoint = torch.load(
+                buffer,
+                map_location=DEVICE,
+                weights_only=False
+            )
+
+            # ------------------------------------------------
+            # Read metadata
+            # ------------------------------------------------
+
+            self.class_names = checkpoint[
+                "class_names"
+            ]
+
+            self.num_classes = checkpoint[
+                "num_classes"
+            ]
+
+            self.checkpoint_info = {
+                "model_name": checkpoint.get(
+                    "model_name",
+                    "resnet50"
+                ),
+                "artifact_version": checkpoint.get(
+                    "artifact_version",
+                    "unknown"
+                ),
+                "epoch": checkpoint.get(
+                    "epoch"
+                ),
+                "val_accuracy": checkpoint.get(
+                    "val_accuracy"
+                ),
+                "val_macro_f1": checkpoint.get(
+                    "val_macro_f1"
+                ),
+            }
+
+            # ------------------------------------------------
+            # Create model
+            # ------------------------------------------------
+
+            self.model = NepaliDressClassifier(
+    num_classes=self.num_classes,
+    pretrained=False,
+)
+
+            # ------------------------------------------------
+            # Load trained weights
+            # ------------------------------------------------
+
+            self.model.load_state_dict(
+                checkpoint["state_dict"]
+            )
+
+            self.model.to(
+                DEVICE
+            )
+
+            self.model.eval()
+
+            print()
+            print(
+                "Model loaded successfully."
+            )
+
+            print(
+                f"Number of classes: "
+                f"{self.num_classes}"
+            )
+
+            print()
+
+            print(
+                "Supported classes:"
+            )
+
+            for index, class_name in enumerate(
+                self.class_names
+            ):
+
+                print(
+                    f"  {index:2d} -> {class_name}"
+                )
+
+            print()
+
+        except Exception as exc:
+
+            self.model = None
+
+            print()
+            print(
+                "ERROR: Failed to load model."
+            )
+
+            print(
+                f"Reason: {exc}"
+            )
+
+            raise
+
+    # ========================================================
+    # PREDICT
+    # ========================================================
+
+    def predict(
+        self,
+        image_bytes: bytes,
+        top_k: int = 3
+    ):
+
+        if self.model is None:
+
+            raise RuntimeError(
+                "Model is not loaded."
+            )
+
+        if not image_bytes:
+
+            raise ValueError(
+                "Empty image file."
+            )
+
+        if len(image_bytes) > MAX_IMAGE_SIZE:
+
+            raise ValueError(
+                "Image exceeds the 5 MB size limit."
+            )
+
+        # ----------------------------------------------------
+        # Open image
+        # ----------------------------------------------------
+
+        try:
+
+            image = Image.open(
+                io.BytesIO(image_bytes)
+            )
+
+            image = image.convert(
+                "RGB"
+            )
+
+        except UnidentifiedImageError:
+
+            raise ValueError(
+                "The uploaded file is not a valid image."
+            )
+
+        except Exception:
+
+            raise ValueError(
+                "Unable to read the uploaded image."
+            )
+
+        # ----------------------------------------------------
+        # Transform
+        # ----------------------------------------------------
+
+        tensor = self.transform(
+            image
+        ).unsqueeze(0)
+
+        tensor = tensor.to(
+            DEVICE
+        )
+
+        # ----------------------------------------------------
+        # Model prediction
+        # ----------------------------------------------------
+
+        with torch.no_grad():
+
+            outputs = self.model(
+                tensor
+            )
+
+            probabilities = F.softmax(
+                outputs,
+                dim=1
+            )[0]
+
+        # ----------------------------------------------------
+        # Top-K predictions
+        # ----------------------------------------------------
+
+        k = min(
+            max(top_k, 1),
+            len(self.class_names)
+        )
+
+        top_probs, top_indices = torch.topk(
+            probabilities,
+            k=k
+        )
+
+        predictions = []
+
+        for probability, index in zip(
+            top_probs,
+            top_indices
+        ):
+
+            class_index = int(
+                index.item()
+            )
+
+            confidence = (
+                probability.item() * 100
+            )
+
+            predictions.append(
+                {
+                    "class_name": (
+                        self.class_names[
+                            class_index
+                        ]
+                    ),
+                    "confidence": round(
+                        confidence,
+                        2
+                    ),
+                }
+            )
+
+        # ----------------------------------------------------
+        # Top prediction
+        # ----------------------------------------------------
+
+        top_confidence = (
+            predictions[0]["confidence"] / 100.0
+        )
+
+        # ----------------------------------------------------
+        # Confidence-based uncertainty
+        # ----------------------------------------------------
+
+        is_ood = (
+            top_confidence
+            < CONFIDENCE_THRESHOLD
+        )
+
+        return predictions, is_ood
+
+
+# ============================================================
+# GLOBAL PREDICTOR SERVICE
+# ============================================================
+
+predictor_service = PredictorService()

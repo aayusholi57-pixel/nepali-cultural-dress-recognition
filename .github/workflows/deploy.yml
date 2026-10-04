@@ -1,0 +1,197 @@
+name: Continuous Deployment to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ======================================================
+      # 1. Checkout repository
+      # ======================================================
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ======================================================
+      # 2. Deploy to EC2
+      # ======================================================
+
+      - name: Deploy Application to EC2
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+
+            set -e
+
+            echo "=========================================="
+            echo "STARTING DEPLOYMENT"
+            echo "=========================================="
+
+            # ------------------------------------------------
+            # Application directory
+            # ------------------------------------------------
+
+            APP_DIR="$HOME/nepali-cultural-dress-recognition"
+
+            # ------------------------------------------------
+            # Clone repository if it does not exist
+            # ------------------------------------------------
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+
+              echo "Repository not found."
+              echo "Cloning repository..."
+
+              git clone \
+                https://github.com/${{ github.repository }}.git \
+                "$APP_DIR"
+
+            fi
+
+            # ------------------------------------------------
+            # Go to application directory
+            # ------------------------------------------------
+
+            cd "$APP_DIR"
+
+            echo "Application directory:"
+            pwd
+
+            # ------------------------------------------------
+            # Get latest code
+            # ------------------------------------------------
+
+            echo "Fetching latest code..."
+
+            git fetch origin main
+
+            git checkout main
+
+            git reset --hard origin/main
+
+            # ------------------------------------------------
+            # Show deployed commit
+            # ------------------------------------------------
+
+            echo "Deployed commit:"
+
+            git log -1 --oneline
+
+            # ------------------------------------------------
+            # Verify required files
+            # ------------------------------------------------
+
+            echo "Checking required files..."
+
+            test -f Dockerfile
+            test -f requirements-docker.txt
+            test -f docker-compose.yml
+            test -d api
+            test -d src
+
+            echo "Required files found."
+
+            # ------------------------------------------------
+            # Build latest Docker image
+            # ------------------------------------------------
+
+            echo "Building Docker image..."
+
+            sudo docker build \
+              -t nepali-dress-api:latest \
+              .
+
+            # ------------------------------------------------
+            # Stop/remove previous container
+            # ------------------------------------------------
+
+            echo "Removing previous container..."
+
+            sudo docker rm -f nepali_dress_api 2>/dev/null || true
+
+            # ------------------------------------------------
+            # Start new container
+            # ------------------------------------------------
+
+            echo "Starting new container..."
+
+            sudo docker run -d \
+              --name nepali_dress_api \
+              -p 9000:8000 \
+              --restart unless-stopped \
+              -e AWS_DEFAULT_REGION=ap-southeast-2 \
+              -e AWS_REGION=ap-southeast-2 \
+              nepali-dress-api:latest
+
+            # ------------------------------------------------
+            # Wait for application startup
+            # ------------------------------------------------
+
+            echo "Waiting for API startup..."
+
+            sleep 15
+
+            # ------------------------------------------------
+            # Show container status
+            # ------------------------------------------------
+
+            echo "Container status:"
+
+            sudo docker ps \
+              --filter "name=nepali_dress_api"
+
+            # ------------------------------------------------
+            # Health check
+            # ------------------------------------------------
+
+            echo "Running health check..."
+
+            HEALTH_RESPONSE=$(curl \
+              --fail \
+              --silent \
+              http://127.0.0.1:9000/health)
+
+            echo "Health response:"
+            echo "$HEALTH_RESPONSE"
+
+            # ------------------------------------------------
+            # Verify model is loaded
+            # ------------------------------------------------
+
+            echo "$HEALTH_RESPONSE" | grep \
+              '"model_loaded":true'
+
+            # ------------------------------------------------
+            # Show recent logs
+            # ------------------------------------------------
+
+            echo "Recent container logs:"
+
+            sudo docker logs \
+              nepali_dress_api \
+              --tail 30
+
+            # ------------------------------------------------
+            # Cleanup dangling images
+            # ------------------------------------------------
+
+            echo "Cleaning unused Docker images..."
+
+            sudo docker image prune -f
+
+            echo "=========================================="
+            echo "DEPLOYMENT SUCCESSFUL"
+            echo "=========================================="
