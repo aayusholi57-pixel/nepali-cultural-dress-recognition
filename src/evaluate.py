@@ -22,7 +22,9 @@ from src.model import NepaliDressClassifier
 DATA_DIR = Path("data")
 TEST_DIR = DATA_DIR / "test"
 
-MODEL_PATH = Path("models/best_resnet50.pth")
+MODEL_PATH = Path(
+    "models/best_resnet50_v2.pth"
+)
 
 OUTPUT_DIR = Path("evaluation")
 
@@ -396,15 +398,18 @@ def evaluate():
     print("CLASSIFICATION REPORT")
     print("=" * 60)
 
-    report = classification_report(
-        y_true,
-        y_pred,
-        labels=list(
-            range(num_classes)
+    report = cast(
+        dict[str, Any],
+        classification_report(
+            y_true,
+            y_pred,
+            labels=list(
+                range(num_classes)
+            ),
+            target_names=class_names,
+            output_dict=True,
+            zero_division=0,
         ),
-        target_names=class_names,
-        output_dict=True,
-        zero_division=0,
     )
 
     print(
