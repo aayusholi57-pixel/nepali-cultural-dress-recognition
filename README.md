@@ -222,7 +222,7 @@ Classifier     → Trainable
 
 layer4 LR      → 1e-5
 classifier LR  → 1e-4
-Epochs         → 3
+Epochs         → 15
 ```
 
 This provides controlled adaptation to Nepali cultural clothing imagery while preserving most of the pretrained representation.
@@ -249,7 +249,9 @@ This provides controlled adaptation to Nepali cultural clothing imagery while pr
 | Class weighting | Inverse square root |
 | Selection metric | Validation Macro F1 |
 | Random seed | 42 |
-| Training target | CPU-compatible |\n| Total training schedule | **20 epochs (5 + 15)** |\n| Best recorded checkpoint | **Phase 2, epoch 3** |
+| Training target | CPU-compatible |
+| Total training schedule | **20 epochs (5 + 15)** |
+| Best recorded checkpoint | **Phase 2, epoch 3** |
 
 Run training with:
 
