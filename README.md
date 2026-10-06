@@ -365,13 +365,25 @@ python -m src.dataset_prep
 
 The recorded experiment used a **20-epoch training schedule**:
 
+### Dataset snapshot
+
+| Split | Images | Classes represented |
+|---|---:|---:|
+| Train | **1,586** | 24 |
+| Validation | **299** | 24 |
+| Test | **192** | 23 of 24 |
+
+The test split is missing the `naugedi` class. The evaluation script detects this condition and remaps the remaining test labels back to the original 24-class model indices so that class-index shifting does not corrupt the evaluation.
+
+
+
 | Phase | Epochs | Purpose |
 |---|---:|---|
 | Phase 1 | **5** | Train the custom classification head with the ResNet50 backbone frozen |
 | Phase 2 | **15** | Fine-tune ResNet50 `layer4` together with the classification head |
 | **Total** | **20** | Complete training schedule |
 
-The best recorded validation checkpoint occurred at **Phase 2, epoch 3**.
+The best recorded validation checkpoint occurred at **Phase 2, epoch 3** — the **8th epoch overall** (5 Phase-1 epochs + 3 Phase-2 epochs).
 
 
 
