@@ -165,7 +165,7 @@ ResNet50 backbone
       └── 2048 feature representation
                 │
                 ▼
-            Dropout
+        Dropout(0.4)
                 │
                 ▼
           Linear → 512
@@ -174,10 +174,10 @@ ResNet50 backbone
               ReLU
                 │
                 ▼
-          BatchNorm(512)
+          BatchNorm1d(512)
                 │
                 ▼
-            Dropout
+          Dropout(0.2)
                 │
                 ▼
           Linear → 24
@@ -251,7 +251,7 @@ This provides controlled adaptation to Nepali cultural clothing imagery while pr
 | Random seed | 42 |
 | Training target | CPU-compatible |
 | Total training schedule | **20 epochs (5 + 15)** |
-| Best recorded checkpoint | **Phase 2, epoch 3** |
+| Best V3 checkpoint | **Phase 2, epoch 7** |
 
 Run training with:
 
@@ -317,7 +317,7 @@ Using the same deterministic normalization assumptions between evaluation and in
 
 # 🧪 Dataset
 
-The project follows the PyTorch `ImageFolder` convention:
+The training and evaluation data follow the PyTorch `ImageFolder` convention:
 
 ```text
 data/
@@ -335,7 +335,7 @@ data/
     └── ...
 ```
 
-Dataset preparation and validation are implemented in:
+Dataset validation is implemented in:
 
 ```text
 src/dataset_prep.py
@@ -363,7 +363,7 @@ python -m src.dataset_prep
 
 ## Current Experiment Snapshot
 
-The recorded experiment used a **20-epoch training schedule**:
+The latest verified **V3 experiment** used the repository's **20-epoch training schedule** (5 + 15).
 
 ### Dataset snapshot
 
@@ -375,17 +375,13 @@ The recorded experiment used a **20-epoch training schedule**:
 
 The test split is missing the `naugedi` class. The evaluation script detects this condition and remaps the remaining test labels back to the original 24-class model indices so that class-index shifting does not corrupt the evaluation.
 
-
-
 | Phase | Epochs | Purpose |
 |---|---:|---|
 | Phase 1 | **5** | Train the custom classification head with the ResNet50 backbone frozen |
 | Phase 2 | **15** | Fine-tune ResNet50 `layer4` together with the classification head |
 | **Total** | **20** | Complete training schedule |
 
-The best recorded validation checkpoint occurred at **Phase 2, epoch 3** — the **8th epoch overall** (5 Phase-1 epochs + 3 Phase-2 epochs).
-
-
+The V3 best checkpoint was recorded at **Phase 2, epoch 7** — the **12th epoch overall** (5 Phase-1 epochs + 7 Phase-2 epochs).
 
 Evaluation is implemented in:
 
@@ -426,17 +422,49 @@ This prevents a subtle class-index shift from producing incorrect evaluation res
 
 Because some classes have no ground-truth test samples, their per-class metrics cannot be interpreted as a real measure of test performance.
 
-### Current experiment snapshot
+### V3 final evaluation
 
-| Metric | Result |
+The **V3 production experiment** is the current benchmark for this repository.
+
+| Metric | V3 result |
 |---|---:|
-| Validation accuracy | **87.96%** |
-| Validation Macro F1 | **61.24%** |
-| Test accuracy | **75.00%** |
-| Test Macro F1 | **60.14%** |
-| Test Weighted F1 | **73.24%** |
+| Validation accuracy | **84.62%** |
+| Validation Macro F1 | **61.44%** |
+| Test accuracy | **82.29%** |
+| Test Macro F1 | **70.90%** |
+| Test Weighted F1 | **82.73%** |
+| Best checkpoint | **Phase 2, epoch 7** |
 
-> These numbers describe the current dataset/model experiment, not a guarantee of future performance. The test-set class coverage limitation above should be considered when interpreting them.
+V3 is the result to use when describing the current model in a portfolio, interview, or deployment discussion. Older experiment results should not be presented as the current benchmark.
+
+> **Evaluation caveat:** the test split contains 192 images across 23 of the 24 model classes; `naugedi` has no test examples. Therefore, the overall test metrics are valid for the available test samples, but the absent class cannot be evaluated from this split.
+
+---
+
+## 🧾 Current V3 Experiment Record
+
+| Item | Verified value |
+|---|---|
+| Experiment | **V3** |
+| Model | ResNet50 transfer learning |
+| Classes | **24** |
+| Train images | **1,586** |
+| Validation images | **299** |
+| Test images | **192** |
+| Test classes represented | **23 / 24** |
+| Missing test class | **naugedi** |
+| Phase 1 | **5 epochs** |
+| Phase 2 | **15 epochs** |
+| Total schedule | **20 epochs** |
+| Best checkpoint | **Phase 2, epoch 7** |
+| Validation accuracy | **84.62%** |
+| Validation Macro F1 | **61.44%** |
+| Test accuracy | **82.29%** |
+| Test Macro F1 | **70.90%** |
+| Test Weighted F1 | **82.73%** |
+| Production artifact path | models/resnet50/best_resnet50.pth in S3 |
+
+This V3 record supersedes the older benchmark numbers previously documented in this README.
 
 ---
 
@@ -449,7 +477,7 @@ models/
 └── best_resnet50.pth
 ```
 
-The checkpoint stores more than the raw weights:
+The checkpoint stores more than the raw weights. The serving layer uses these fields to reconstruct the model and class mapping:
 
 ```text
 artifact_version
@@ -466,7 +494,7 @@ val_macro_f1
 phase
 ```
 
-This makes the model artifact **self-describing** and allows the serving layer to reconstruct the correct architecture and class mapping.
+This makes the model artifact **self-describing** and allows the serving layer to reconstruct the correct architecture, preprocessing assumptions, and class mapping.
 
 The production API creates the architecture with:
 
@@ -874,11 +902,11 @@ nepali-cultural-dress-recognition/
 │
 ├── src/
 │   ├── __init__.py
-│   ├── dataset_prep.py             # Dataset validation/preparation
+│   ├── dataset_prep.py             # Dataset validation and class checks
 │   ├── evaluate.py                 # Test evaluation + artifacts
 │   ├── model.py                    # ResNet50 architecture
 │   ├── train.py                    # Two-phase training
-│   └── utils.py                    # Utility module
+│   └── utils.py                    # Reserved utility module
 │
 ├── Dockerfile                      # Production container
 ├── docker-compose.yml              # Local container orchestration
@@ -968,7 +996,7 @@ Current limitations include:
 - predictions outside the learned class distribution may still be assigned to a known class
 - CPU inference is slower than GPU inference
 - AWS/S3 access is required during production startup
-- the model is currently optimized for a fixed 24-class label space
+- the model is currently optimized for a fixed 24-class label space and the current test split does not cover all 24 classes
 
 These limitations are documented deliberately so that benchmark numbers are not overstated.
 
