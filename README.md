@@ -206,7 +206,7 @@ The ResNet50 backbone is frozen.
 Backbone      → Frozen
 Custom head   → Trainable
 Learning rate → 1e-3
-Epochs        → 3
+Epochs        → 5
 ```
 
 This lets the new classifier learn the target label space before modifying the pretrained feature extractor.
@@ -238,8 +238,8 @@ This provides controlled adaptation to Nepali cultural clothing imagery while pr
 | Number of classes | 24 |
 | Input size | 224 × 224 |
 | Batch size | 8 |
-| Phase 1 | 3 epochs |
-| Phase 2 | 3 epochs |
+| Phase 1 | 5 epochs |
+| Phase 2 | 15 epochs |
 | Head learning rate | 1e-3 |
 | Layer4 learning rate | 1e-5 |
 | Fine-tuned head learning rate | 1e-4 |
@@ -249,7 +249,7 @@ This provides controlled adaptation to Nepali cultural clothing imagery while pr
 | Class weighting | Inverse square root |
 | Selection metric | Validation Macro F1 |
 | Random seed | 42 |
-| Training target | CPU-compatible |
+| Training target | CPU-compatible |\n| Total training schedule | **20 epochs (5 + 15)** |\n| Best recorded checkpoint | **Phase 2, epoch 3** |
 
 Run training with:
 
@@ -358,6 +358,20 @@ python -m src.dataset_prep
 ---
 
 # 📈 Evaluation
+
+## Current Experiment Snapshot
+
+The recorded experiment used a **20-epoch training schedule**:
+
+| Phase | Epochs | Purpose |
+|---|---:|---|
+| Phase 1 | **5** | Train the custom classification head with the ResNet50 backbone frozen |
+| Phase 2 | **15** | Fine-tune ResNet50 `layer4` together with the classification head |
+| **Total** | **20** | Complete training schedule |
+
+The best recorded validation checkpoint occurred at **Phase 2, epoch 3**.
+
+
 
 Evaluation is implemented in:
 
@@ -739,7 +753,7 @@ The repository follows practical production engineering principles:
 - Uploaded images are size-limited
 - MIME types are validated
 - Image bytes are actually decoded before inference
-- Model-loading failure prevents a false healthy state
+- A model-loading failure prevents the application from completing startup
 - Runtime configuration is supplied through environment variables
 - CI/CD secrets are expected to remain in GitHub Secrets
 - S3 access should follow least privilege
