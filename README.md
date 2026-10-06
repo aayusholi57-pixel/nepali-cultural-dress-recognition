@@ -1,101 +1,323 @@
 # 🇳🇵 Nepali Cultural Dress Recognition
 
-> **Production-oriented computer vision system for recognizing Nepali cultural dresses and ornaments using a fine-tuned ResNet50 model, FastAPI, Docker, Amazon S3, Amazon EC2, and GitHub Actions.**
+> **An end-to-end computer vision system for recognizing Nepali cultural dresses and ornaments — from dataset preparation and transfer learning to a production FastAPI service, Docker, Amazon S3, Amazon EC2, and automated CI/CD.**
 
 [![CI/CD](https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition/actions/workflows/deploy.yml/badge.svg)](https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition/actions/workflows/deploy.yml)
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-ResNet50-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Docker](https://img.shields.io/badge/Container-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Production%20API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![AWS](https://img.shields.io/badge/AWS-S3%20%7C%20EC2-232F3E?logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
+[![License](https://img.shields.io/badge/License-To%20be%20added-lightgrey)](#license)
 
 ---
 
-## Overview
+## 📌 What This Project Does
 
-**Nepali Cultural Dress Recognition** is an end-to-end image classification platform designed to identify Nepali cultural clothing and ornaments from uploaded images.
+**Nepali Cultural Dress Recognition** is a production-oriented image-classification system that identifies Nepali cultural dresses and ornaments from images.
 
-The project combines a transfer-learning training pipeline with a production API and cloud-based model delivery:
+The project is intentionally built as an **end-to-end ML engineering system**, not only as a notebook or training script:
 
-**Image → preprocessing → fine-tuned ResNet50 → top-k predictions → confidence/uncertainty decision → FastAPI response**
+```text
+Dataset
+   ↓
+Validation & Preparation
+   ↓
+Augmentation + ImageNet Normalization
+   ↓
+ResNet50 Transfer Learning
+   ↓
+Two-Stage Fine-Tuning
+   ↓
+Validation / Test Evaluation
+   ↓
+Model Checkpoint
+   ↓
+Amazon S3
+   ↓
+FastAPI Inference Service
+   ↓
+Docker Container
+   ↓
+Amazon EC2
+   ↓
+GitHub Actions CI/CD
+```
 
-The trained checkpoint is stored outside the application container in **Amazon S3**. At application startup, the API downloads the model artifact from S3, reconstructs the ResNet50 architecture, loads the trained state dictionary, and exposes inference through a documented FastAPI service.
-
-The deployment stack is containerized with Docker and automated through GitHub Actions to an Amazon EC2 instance.
+The trained model recognizes **24 target classes** and returns ranked predictions with confidence scores. If the highest confidence falls below the configured threshold, the API reports the result as **uncertain** rather than presenting it as a confident classification.
 
 ---
 
-## Key Capabilities
+## ✨ Highlights
 
-- 🧠 **ResNet50 transfer learning** for visual classification
-- 🎯 **Two-stage fine-tuning**
-  - Phase 1: classification head training
-  - Phase 2: ResNet50 layer4 + classification head fine-tuning
-- ⚖️ **Class-imbalance handling** using inverse-square-root class weighting
-- 🖼️ **Image augmentation** for improved generalization
-- 📊 **Accuracy, Macro F1, and Weighted F1** tracking
-- 🔎 **Top-k predictions** with confidence scores
-- 🚦 **Confidence-based uncertainty / OOD-style flagging**
+- 🧠 **ResNet50 transfer learning** with ImageNet initialization
+- 🎯 **Two-stage fine-tuning** for controlled domain adaptation
+- ⚖️ **Class-imbalance-aware training** using inverse-square-root class weighting
+- 🖼️ **Production-consistent preprocessing** at 224×224
+- 📊 **Accuracy, Macro F1, Weighted F1, classification report, and confusion matrix**
+- 🏷️ **24-class cultural dress / ornament classification**
+- 🔎 **Top-3 inference results**
+- 🚦 **Confidence-based uncertainty detection**
 - ☁️ **Amazon S3 model artifact storage**
+- 🐳 **Dockerized inference**
 - 🚀 **Amazon EC2 deployment**
-- 🐳 **Dockerized inference service**
-- 🔄 **GitHub Actions CI/CD**
-- ❤️ **Health and model-information endpoints**
-- 🔐 **AWS credential-chain support** suitable for EC2 IAM roles
-- 🛡️ **Non-root Docker runtime**
-- 📦 **Reproducible checkpoint metadata**
-- 🧪 **Dataset validation and class-consistency checks**
+- 🔄 **GitHub Actions automated deployment**
+- ❤️ **Health endpoint with model-loaded verification**
+- ℹ️ **Model metadata endpoint**
+- 🔐 **AWS credential-chain support / EC2 IAM role compatibility**
+- 🛡️ **Non-root container runtime**
+- 📦 **Self-describing model checkpoint metadata**
+- 🧪 **Dataset and class-consistency validation**
 
 ---
 
-## System Architecture
+# 🏗️ System Architecture
 
-~~~text
-                         ┌──────────────────────┐
-                         │   Client / Browser    │
-                         └──────────┬───────────┘
-                                    │
-                                    │ image upload
-                                    ▼
-                         ┌──────────────────────┐
-                         │      FastAPI API      │
-                         │   /predict /health    │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │   PredictorService    │
-                         │ preprocessing +       │
-                         │ inference + top-k     │
-                         └──────────┬───────────┘
-                                    │
-                                    │ trained weights
-                                    ▼
-                         ┌──────────────────────┐
-                         │     ResNet50          │
-                         │  fine-tuned model     │
-                         └──────────────────────┘
-                                    ▲
-                                    │
-                          startup download
-                                    │
-                         ┌──────────────────────┐
-                         │     Amazon S3         │
-                         │ best_resnet50.pth     │
-                         └──────────────────────┘
+```text
+                              ┌──────────────────────┐
+                              │   User / Client      │
+                              │  Image Upload        │
+                              └──────────┬───────────┘
+                                         │
+                                         ▼
+                              ┌──────────────────────┐
+                              │      FastAPI         │
+                              │                      │
+                              │  /                  │
+                              │  /health            │
+                              │  /model-info        │
+                              │  /predict            │
+                              └──────────┬───────────┘
+                                         │
+                                         ▼
+                              ┌──────────────────────┐
+                              │   PredictorService   │
+                              │                      │
+                              │ Validation           │
+                              │ RGB conversion       │
+                              │ Preprocessing        │
+                              │ Inference            │
+                              │ Top-K ranking        │
+                              │ Confidence decision  │
+                              └──────────┬───────────┘
+                                         │
+                                         ▼
+                              ┌──────────────────────┐
+                              │      ResNet50        │
+                              │   24-class model     │
+                              └──────────▲───────────┘
+                                         │
+                               model artifact
+                                         │
+                              ┌──────────┴───────────┐
+                              │      Amazon S3        │
+                              │                      │
+                              │ best_resnet50.pth   │
+                              └──────────────────────┘
 
-        GitHub ──► GitHub Actions ──► Docker build ──► Amazon EC2
-~~~
+
+        ┌───────────────────── CI/CD ─────────────────────┐
+        │                                                   │
+        │  GitHub → GitHub Actions → SSH → EC2 → Docker   │
+        │                                                   │
+        └───────────────────────────────────────────────────┘
+```
+
+### Deployment flow
+
+```text
+git push
+   │
+   ▼
+GitHub Actions
+   │
+   ├── checkout main
+   ├── validate deployment files
+   ├── build Docker image
+   ├── start container
+   ├── verify /health
+   ├── verify model_loaded=true
+   └── verify /model-info
+             │
+             ▼
+         Amazon EC2
+             │
+             ▼
+       FastAPI container
+             │
+             ▼
+        Amazon S3 model
+```
 
 ---
 
-## Machine Learning Pipeline
+# 🤖 Machine Learning
 
-### 1. Dataset validation
+## Model
 
-The dataset follows an ImageFolder-compatible structure:
+The project uses **ResNet50** with ImageNet pretrained weights.
 
-~~~text
+The original ResNet50 classification layer is replaced with a custom classification head:
+
+```text
+ResNet50 backbone
+      │
+      └── 2048 feature representation
+                │
+                ▼
+            Dropout
+                │
+                ▼
+          Linear → 512
+                │
+                ▼
+              ReLU
+                │
+                ▼
+          BatchNorm(512)
+                │
+                ▼
+            Dropout
+                │
+                ▼
+          Linear → 24
+                │
+                ▼
+        Class probabilities
+```
+
+The model is implemented in:
+
+```text
+src/model.py
+```
+
+---
+
+# 🎯 Two-Stage Fine-Tuning
+
+Rather than immediately updating the entire pretrained network, training is divided into two controlled phases.
+
+## Phase 1 — Train the classification head
+
+The ResNet50 backbone is frozen.
+
+```text
+Backbone      → Frozen
+Custom head   → Trainable
+Learning rate → 1e-3
+Epochs        → 3
+```
+
+This lets the new classifier learn the target label space before modifying the pretrained feature extractor.
+
+## Phase 2 — Domain adaptation
+
+ResNet50 `layer4` and the classification head are unfrozen.
+
+```text
+Early backbone → Frozen
+layer4         → Trainable
+Classifier     → Trainable
+
+layer4 LR      → 1e-5
+classifier LR  → 1e-4
+Epochs         → 3
+```
+
+This provides controlled adaptation to Nepali cultural clothing imagery while preserving most of the pretrained representation.
+
+---
+
+# 📊 Training Configuration
+
+| Component | Configuration |
+|---|---|
+| Architecture | ResNet50 |
+| Initialization | ImageNet pretrained |
+| Number of classes | 24 |
+| Input size | 224 × 224 |
+| Batch size | 8 |
+| Phase 1 | 3 epochs |
+| Phase 2 | 3 epochs |
+| Head learning rate | 1e-3 |
+| Layer4 learning rate | 1e-5 |
+| Fine-tuned head learning rate | 1e-4 |
+| Optimizer | AdamW |
+| Weight decay | 1e-4 |
+| Loss | Weighted Cross Entropy |
+| Class weighting | Inverse square root |
+| Selection metric | Validation Macro F1 |
+| Random seed | 42 |
+| Training target | CPU-compatible |
+
+Run training with:
+
+```bash
+python -m src.train
+```
+
+---
+
+# ⚖️ Class Imbalance Strategy
+
+The training set is not perfectly balanced across classes.
+
+Instead of using raw inverse-frequency weighting, the project uses:
+
+```text
+weight(class) = 1 / sqrt(class_count)
+```
+
+The resulting weights are normalized so their mean is approximately 1.
+
+This is deliberately less aggressive than direct inverse-frequency weighting and helps prevent very small classes from dominating the loss.
+
+---
+
+# 🖼️ Image Pipeline
+
+### Training
+
+```text
+Input image
+   ↓
+RandomResizedCrop(224)
+   ↓
+RandomHorizontalFlip
+   ↓
+RandomRotation(10°)
+   ↓
+ColorJitter
+   ↓
+ToTensor
+   ↓
+ImageNet normalization
+```
+
+### Validation / inference
+
+```text
+Input image
+   ↓
+Resize → 224 × 224
+   ↓
+ToTensor
+   ↓
+ImageNet normalization
+   ↓
+ResNet50
+```
+
+Using the same deterministic normalization assumptions between evaluation and inference reduces training/serving preprocessing mismatch.
+
+---
+
+# 🧪 Dataset
+
+The project follows the PyTorch `ImageFolder` convention:
+
+```text
 data/
 ├── train/
 │   ├── class_01/
@@ -109,274 +331,210 @@ data/
     ├── class_01/
     ├── class_02/
     └── ...
-~~~
+```
 
-The dataset validation script checks:
+Dataset preparation and validation are implemented in:
 
-- required train/validation/test splits
+```text
+src/dataset_prep.py
+```
+
+The pipeline checks important dataset assumptions such as:
+
+- required splits
 - class-folder consistency
 - supported image extensions
-- image counts per class
-- empty class directories
-- train/validation/test class mismatches
+- image counts
+- empty classes
+- train/validation class mismatches
 - reproducible class-index mapping
 
 Run:
 
-~~~bash
+```bash
 python -m src.dataset_prep
-~~~
+```
 
 ---
 
-### 2. Image preprocessing
+# 📈 Evaluation
 
-Training images use augmentation including:
+Evaluation is implemented in:
 
-- Random resized crop
-- Horizontal flip
-- Small random rotation
-- Color jitter
-- Tensor conversion
-- ImageNet normalization
-
-Validation and inference use deterministic resizing and ImageNet normalization.
-
-Target image size:
-
-~~~text
-224 × 224
-~~~
-
----
-
-### 3. Model architecture
-
-The core classifier is **ResNet50** initialized with ImageNet pretrained weights during training.
-
-The original classification layer is replaced with:
-
-~~~text
-Dropout
-   ↓
-Linear
-   ↓
-ReLU
-   ↓
-BatchNorm
-   ↓
-Dropout
-   ↓
-Linear → N classes
-~~~
-
-This allows the ImageNet representation to be adapted to the Nepali cultural dress domain.
-
----
-
-## Fine-Tuning Strategy
-
-The training pipeline uses two controlled optimization phases.
-
-### Phase 1 — Classification head
-
-The ResNet50 backbone is frozen.
-
-Only the custom classification head is trained.
-
-~~~text
-Backbone      → Frozen
-Classifier    → Trainable
-Learning rate → 1e-3
-~~~
-
-This allows the new classifier to first learn the target label space without aggressively changing the pretrained visual representation.
-
-### Phase 2 — Domain adaptation
-
-The final ResNet50 feature block, layer4, is unfrozen together with the classification head.
-
-~~~text
-Early backbone → Frozen
-layer4         → Trainable
-Classifier     → Trainable
-~~~
-
-The optimizer uses separate learning rates:
-
-~~~text
-layer4 → 1e-5
-head   → 1e-4
-~~~
-
-This is genuine **fine-tuning of pretrained ResNet50**, rather than training a new CNN from scratch.
-
-Run training with:
-
-~~~bash
-python -m src.train
-~~~
-
-The best checkpoint is selected using **validation Macro F1**.
-
----
-
-## Training Configuration
-
-| Component | Configuration |
-|---|---|
-| Architecture | ResNet50 |
-| Initialization | ImageNet pretrained weights |
-| Input size | 224 × 224 |
-| Batch size | 8 |
-| Phase 1 epochs | 3 |
-| Phase 2 epochs | 3 |
-| Head learning rate | 1e-3 |
-| Layer4 learning rate | 1e-5 |
-| Fine-tuned head learning rate | 1e-4 |
-| Optimizer | AdamW |
-| Weight decay | 1e-4 |
-| Loss | Weighted Cross Entropy |
-| Selection metric | Validation Macro F1 |
-| Random seed | 42 |
-| Runtime training target | CPU-compatible |
-
-> Training configuration is intentionally kept explicit in src/train.py so experiments remain reproducible and auditable.
-
----
-
-## Evaluation
-
-The evaluation pipeline loads the saved checkpoint and evaluates the model against the test split.
-
-It supports:
-
-- classification report
-- confusion matrix
-- per-class analysis
-- accuracy-oriented evaluation
-- Macro F1
-- Weighted F1
-- evaluation artifact generation
+```text
+src/evaluate.py
+```
 
 Run:
 
-~~~bash
+```bash
 python -m src.evaluate
-~~~
+```
 
-Evaluation outputs are written under:
+The evaluation pipeline generates:
 
-~~~text
+```text
 evaluation/
-~~~
+├── metrics.json
+└── confusion_matrix.png
+```
 
-The README intentionally does **not** hard-code a benchmark score. The reported metric should come directly from the latest reproducible evaluation run rather than being manually copied into documentation.
+It reports:
+
+- Accuracy
+- Macro F1
+- Weighted F1
+- Per-class precision
+- Per-class recall
+- Per-class F1
+- Confusion matrix
+- Best validation metrics stored in the checkpoint
+
+### Important test-set note
+
+The current test split does not contain examples for every one of the 24 model classes. The evaluation code explicitly detects missing test classes and remaps the remaining ImageFolder labels back to the original 24-class model indices.
+
+This prevents a subtle class-index shift from producing incorrect evaluation results.
+
+Because some classes have no ground-truth test samples, their per-class metrics cannot be interpreted as a real measure of test performance.
+
+### Current experiment snapshot
+
+| Metric | Result |
+|---|---:|
+| Validation accuracy | **87.96%** |
+| Validation Macro F1 | **61.24%** |
+| Test accuracy | **75.00%** |
+| Test Macro F1 | **60.14%** |
+| Test Weighted F1 | **73.24%** |
+
+> These numbers describe the current dataset/model experiment, not a guarantee of future performance. The test-set class coverage limitation above should be considered when interpreting them.
 
 ---
 
-## Model Artifact
+# 📦 Model Artifact
 
-The training pipeline produces:
+Training produces:
 
-~~~text
+```text
 models/
 └── best_resnet50.pth
-~~~
+```
 
-The checkpoint is a self-contained artifact containing:
+The checkpoint stores more than the raw weights:
 
-- model architecture identifier
-- artifact version
-- trained state_dict
-- class names
-- number of classes
-- image size
-- normalization parameters
-- training epoch
-- validation accuracy
-- validation Macro F1
-- training phase
+```text
+artifact_version
+model_name
+state_dict
+class_names
+num_classes
+image_size
+mean
+std
+epoch
+val_accuracy
+val_macro_f1
+phase
+```
 
-This metadata allows the inference service to reconstruct the model consistently with the training configuration.
+This makes the model artifact **self-describing** and allows the serving layer to reconstruct the correct architecture and class mapping.
+
+The production API creates the architecture with:
+
+```python
+NepaliDressClassifier(
+    num_classes=num_classes,
+    pretrained=False,
+)
+```
+
+The `pretrained=False` setting is important in deployment: the API loads the trained checkpoint instead of downloading ImageNet weights again.
 
 ---
 
-## Amazon S3 Model Management
+# ☁️ AWS S3 Model Storage
 
-The production API does not require the model checkpoint to be baked into the Docker image.
+The model artifact is separated from the application container.
 
-Instead:
-
-~~~text
+```text
 Amazon S3
-   │
-   │ download at application startup
-   ▼
+    │
+    │ startup download
+    ▼
 FastAPI container
-   │
-   ▼
-ResNet50 inference
-~~~
+    │
+    ▼
+ResNet50
+```
 
-Default model configuration:
+Default configuration:
 
-~~~text
+```text
 S3_MODEL_KEY=models/resnet50/best_resnet50.pth
-~~~
+AWS_REGION=ap-southeast-2
+```
 
-The bucket and object key can be configured through environment variables:
+The bucket is configurable with:
 
-~~~bash
+```bash
 S3_BUCKET=your-bucket
 S3_MODEL_KEY=models/resnet50/best_resnet50.pth
 AWS_REGION=ap-southeast-2
-~~~
+```
 
-For EC2, the application supports the standard AWS credential chain and can use an **IAM role attached to the instance**, avoiding hard-coded AWS access keys inside the application.
+The application uses boto3's AWS credential chain. On EC2, the recommended approach is an **IAM instance role** with least-privilege access to the required S3 object.
 
 ---
 
-## FastAPI Service
+# 🚀 FastAPI Inference API
 
-The API is implemented in:
+The API lives in:
 
-~~~text
+```text
 api/
 ├── main.py
 ├── predictor.py
 └── schemas.py
-~~~
+```
 
-### Endpoints
+## Endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | / | API information |
-| GET | /health | Service/model health |
-| GET | /model-info | Model metadata and supported classes |
-| POST | /predict | Image classification |
+| GET | `/` | API information and available routes |
+| GET | `/health` | Service and model health |
+| GET | `/model-info` | Architecture, class count, classes, device, checkpoint metadata |
+| POST | `/predict` | Classify an uploaded image |
 
-Interactive documentation is automatically provided by FastAPI:
+Interactive documentation:
 
-~~~text
-/docs
-/redoc
-~~~
+```text
+http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/redoc
+```
 
-### Example prediction flow
+---
 
-~~~text
+# 🔍 Prediction Pipeline
+
+```text
 JPEG / PNG / WEBP
         │
         ▼
-File validation
+Content-type validation
+        │
+        ▼
+5 MB size validation
+        │
+        ▼
+PIL image validation
         │
         ▼
 RGB conversion
         │
         ▼
-224×224 preprocessing
+224 × 224 resize
         │
         ▼
 ImageNet normalization
@@ -388,26 +546,31 @@ ResNet50 inference
 Softmax probabilities
         │
         ▼
-Top-3 predictions
+Top-3 ranking
         │
         ▼
-Confidence threshold
+0.60 confidence threshold
         │
-        ▼
-JSON response
-~~~
+        ├── confidence ≥ 0.60 → success
+        │
+        └── confidence < 0.60 → uncertain
+```
 
-The service limits uploaded images to **5 MB** and rejects unsupported image formats.
+The API accepts:
+
+- JPEG
+- PNG
+- WEBP
+
+The application enforces a **5 MB maximum image size** and also validates that the uploaded bytes are a real readable image rather than relying only on the MIME type.
 
 ---
 
-## Example API Response
+# 📋 Example Response
 
-A successful response follows this general structure:
-
-~~~json
+```json
 {
-  "filename": "dress.jpg",
+  "filename": "nepali-dress.jpg",
   "status": "success",
   "top_prediction": "example_class",
   "confidence": 94.21,
@@ -415,100 +578,48 @@ A successful response follows this general structure:
     {
       "class_name": "example_class",
       "confidence": 94.21
+    },
+    {
+      "class_name": "another_class",
+      "confidence": 3.71
+    },
+    {
+      "class_name": "third_class",
+      "confidence": 1.02
     }
   ],
   "is_out_of_distribution": false
 }
-~~~
+```
 
-When the highest confidence is below the configured threshold, the API marks the result as uncertain instead of presenting the prediction as highly confident.
+### Uncertain prediction
 
----
+When the highest softmax confidence is below `0.60`:
 
-## Local Development
+```json
+{
+  "status": "uncertain",
+  "is_out_of_distribution": true
+}
+```
 
-### 1. Clone
-
-~~~bash
-git clone https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition.git
-cd nepali-cultural-dress-recognition
-~~~
-
-### 2. Create a virtual environment
-
-Windows:
-
-~~~powershell
-python -m venv .venv
-.\\.venv\\Scripts\\Activate.ps1
-~~~
-
-Linux/macOS:
-
-~~~bash
-python3 -m venv .venv
-source .venv/bin/activate
-~~~
-
-### 3. Install dependencies
-
-~~~bash
-pip install -r requirements.txt
-~~~
-
-### 4. Validate the dataset
-
-~~~bash
-python -m src.dataset_prep
-~~~
-
-### 5. Train
-
-~~~bash
-python -m src.train
-~~~
-
-### 6. Evaluate
-
-~~~bash
-python -m src.evaluate
-~~~
-
-### 7. Start the API
-
-The API expects access to the trained model through S3 in production.
-
-For local inference, configure AWS credentials and the model location:
-
-~~~powershell
-$env:AWS_REGION="ap-southeast-2"
-$env:S3_BUCKET="your-bucket"
-$env:S3_MODEL_KEY="models/resnet50/best_resnet50.pth"
-
-uvicorn api.main:app --reload
-~~~
-
-Open:
-
-~~~text
-http://127.0.0.1:8000/docs
-~~~
+> **Important:** this is a confidence-based uncertainty flag, not a formally calibrated or guaranteed OOD detector. Softmax confidence should not be interpreted as a statistically calibrated probability of correctness.
 
 ---
 
-## Docker
+# 🐳 Docker
 
-The repository includes a production-oriented Dockerfile and Compose configuration.
+The inference service is containerized for repeatable deployment.
 
 Build:
 
-~~~bash
+```bash
 docker build -t nepali-dress-api .
-~~~
+```
 
 Run:
 
-~~~bash
+```bash
 docker run -d \
   --name nepali_dress_api \
   -p 9000:8000 \
@@ -516,273 +627,442 @@ docker run -d \
   -e S3_BUCKET=your-bucket \
   -e S3_MODEL_KEY=models/resnet50/best_resnet50.pth \
   nepali-dress-api
-~~~
+```
 
-Or use Compose:
+Or:
 
-~~~bash
+```bash
 docker compose up --build
-~~~
+```
 
-The service is exposed locally on:
+The local container mapping used by the deployment configuration is:
 
-~~~text
-http://127.0.0.1:9000
-~~~
+```text
+Host     : 9000
+Container: 8000
+```
 
 ---
 
-## AWS Deployment Architecture
+# ☁️ Amazon EC2 Deployment
 
-The production deployment uses:
+The production deployment runs the Dockerized FastAPI service on **Amazon EC2**.
 
-~~~text
+High-level architecture:
+
+```text
                     GitHub
                       │
-                      │ push to main
+                      │ push
                       ▼
               GitHub Actions
                       │
-                      │ SSH deployment
+                      │ SSH
                       ▼
                  Amazon EC2
                       │
-                Docker container
+                      ▼
+               Docker Container
                       │
-          ┌───────────┴───────────┐
-          ▼                       ▼
-     FastAPI API             AWS S3
-          │                 model artifact
-          │                       │
-          └────── ResNet50 ◄─────┘
-~~~
+             ┌────────┴────────┐
+             │                 │
+             ▼                 ▼
+          FastAPI           Amazon S3
+             │              Model Artifact
+             ▼
+          ResNet50
+```
 
-### Deployment characteristics
+The deployment workflow:
 
-- Docker image built on the EC2 host
-- Application container runs as a non-root user
-- Model artifact remains in S3
-- AWS region defaults to ap-southeast-2
-- Container restart policy is enabled
-- Docker health checks are configured
-- CI/CD verifies the container and /health endpoint
-- Deployment fails if the model does not load successfully
+1. Checks out the latest `main` branch
+2. Connects to EC2
+3. Removes the previous application container
+4. Clones the current repository
+5. Verifies required files
+6. Verifies deployment model configuration
+7. Builds the Docker image
+8. Starts the container
+9. Waits for the API to become ready
+10. Requires `model_loaded=true`
+11. Queries `/model-info`
+12. Performs a final health verification
+13. Cleans unused Docker images
+14. Fails the deployment if health verification fails
 
-The deployment workflow is defined in:
+Workflow:
 
-~~~text
+```text
 .github/workflows/deploy.yml
-~~~
+```
 
 ---
 
-## CI/CD
+# 🔄 CI/CD
 
-The GitHub Actions workflow performs an automated deployment to EC2.
+A push to `main` can trigger the EC2 deployment workflow.
 
-The deployment pipeline includes:
+The deployment is deliberately **health-gated**.
 
-1. Checkout the latest repository state
-2. Connect to EC2 through SSH
-3. Remove the previous application container
-4. Clone the latest main branch
-5. Verify required project files
-6. Validate model configuration
-7. Build the Docker image
-8. Start the container
-9. Check container health
-10. Verify model_loaded=true
-11. Query model information
-12. Perform final health verification
-13. Clean unused Docker images
-14. Report deployment success or failure
+A successful Docker build alone is not considered a successful deployment.
 
-This makes deployment failures visible at the CI/CD layer instead of silently leaving an unhealthy container running.
+The workflow verifies:
+
+```text
+Docker build
+     ↓
+Container running
+     ↓
+/health responds
+     ↓
+model_loaded = true
+     ↓
+/model-info responds
+     ↓
+Final health check
+     ↓
+DEPLOYMENT SUCCESSFUL
+```
+
+If the model cannot be downloaded from S3 or cannot be loaded into ResNet50, the deployment fails instead of silently publishing an unhealthy API.
 
 ---
 
-## Security Design
+# 🔐 Security & Production Practices
 
-The project follows several practical production-security principles:
+The repository follows practical production engineering principles:
 
-- AWS credentials are not hard-coded into Python source
+- AWS access keys are not embedded in Python source code
 - EC2 can use an IAM instance role
-- Model artifacts are separated from application code
+- S3 model storage is separated from application code
 - Docker runs the API as a non-root user
-- Uploaded files are size-limited
-- Uploaded file MIME types are validated
-- Invalid image data is rejected
-- Model loading failures prevent false-positive health status
-- Secrets are expected to be supplied through runtime configuration or GitHub Secrets
+- Uploaded images are size-limited
+- MIME types are validated
+- Image bytes are actually decoded before inference
+- Model-loading failure prevents a false healthy state
+- Runtime configuration is supplied through environment variables
+- CI/CD secrets are expected to remain in GitHub Secrets
+- S3 access should follow least privilege
 
-### Recommended AWS policy
+### Recommended IAM design
 
-For production, the EC2 role should receive the minimum S3 permissions required to read the model artifact rather than broad administrator access.
+The EC2 role should have only the S3 permissions required to read the model artifact.
+
+Avoid attaching broad administrator permissions to the application instance.
 
 ---
 
-## Project Structure
+# 🧪 Local Setup
 
-~~~text
+## 1. Clone the repository
+
+```bash
+git clone https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition.git
+cd nepali-cultural-dress-recognition
+```
+
+## 2. Create a virtual environment
+
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+### Linux / macOS
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+## 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+For the CPU-oriented Docker runtime:
+
+```bash
+pip install -r requirements-docker.txt
+```
+
+## 4. Validate the dataset
+
+```bash
+python -m src.dataset_prep
+```
+
+## 5. Train
+
+```bash
+python -m src.train
+```
+
+## 6. Evaluate
+
+```bash
+python -m src.evaluate
+```
+
+## 7. Start the API
+
+Configure AWS access and model location:
+
+### Windows PowerShell
+
+```powershell
+$env:AWS_REGION="ap-southeast-2"
+$env:S3_BUCKET="your-bucket"
+$env:S3_MODEL_KEY="models/resnet50/best_resnet50.pth"
+
+uvicorn api.main:app --reload
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+---
+
+# 📁 Repository Structure
+
+```text
 nepali-cultural-dress-recognition/
 │
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml
+│       └── deploy.yml              # EC2 deployment automation
 │
 ├── api/
 │   ├── __init__.py
-│   ├── main.py
-│   ├── predictor.py
-│   └── schemas.py
+│   ├── main.py                     # FastAPI application
+│   ├── predictor.py                # S3 + model + inference service
+│   └── schemas.py                  # Pydantic response schemas
 │
 ├── src/
 │   ├── __init__.py
-│   ├── dataset_prep.py
-│   ├── evaluate.py
-│   ├── model.py
-│   ├── train.py
-│   └── utils.py
+│   ├── dataset_prep.py             # Dataset validation/preparation
+│   ├── evaluate.py                 # Test evaluation + artifacts
+│   ├── model.py                    # ResNet50 architecture
+│   ├── train.py                    # Two-phase training
+│   └── utils.py                    # Utility module
 │
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── requirements-docker.txt
+├── Dockerfile                      # Production container
+├── docker-compose.yml              # Local container orchestration
+├── requirements.txt                # Development/training dependencies
+├── requirements-docker.txt         # CPU deployment dependencies
 ├── .dockerignore
 ├── .gitignore
 └── README.md
-~~~
-
-Large datasets and trained model artifacts are intentionally managed outside the normal application source tree when appropriate.
+```
 
 ---
 
-## Engineering Decisions
+# 🧠 Engineering Decisions
 
 ### Why ResNet50?
 
-ResNet50 provides a strong pretrained visual representation while remaining practical for transfer learning and CPU-based inference.
+ResNet50 provides a strong ImageNet pretrained representation and is a practical foundation for transfer learning on a relatively specialized visual dataset.
 
-### Why two-phase fine-tuning?
+### Why two-stage fine-tuning?
 
-Training the head first stabilizes the new classifier. Fine-tuning the final backbone block afterward allows the representation to adapt to the target cultural-dress domain while reducing the risk of destroying useful pretrained features.
+Training the head first stabilizes the new classification layer. Unfreezing `layer4` afterward allows domain adaptation without aggressively changing the entire pretrained backbone.
 
 ### Why Macro F1?
 
-A multi-class cultural-dress dataset may not contain perfectly balanced classes. Macro F1 gives every class equal importance and therefore provides a more informative model-selection signal than accuracy alone.
+Accuracy can hide poor performance on smaller classes. Macro F1 gives each class equal importance and is therefore useful for model selection on imbalanced multi-class data.
 
-### Why S3 for the model?
+### Why inverse-square-root class weighting?
 
-Separating model artifacts from the application image makes model replacement easier and avoids rebuilding the container every time the model artifact changes.
+Direct inverse-frequency weighting can become excessively aggressive for rare classes. Inverse-square-root weighting provides a softer correction.
+
+### Why S3?
+
+The model artifact is independent from the application image. A model can therefore be replaced without embedding a large checkpoint directly into the source repository or Docker build context.
 
 ### Why Docker?
 
-Docker provides a repeatable runtime containing the API, Python dependencies, and inference environment.
+Docker gives the inference service a reproducible runtime and makes local-to-cloud deployment more consistent.
 
 ### Why EC2?
 
-EC2 provides direct control over the container runtime, networking, instance configuration, and AWS IAM integration.
+EC2 provides direct control over the runtime, Docker environment, networking, and IAM integration.
 
-### Why GitHub Actions?
+### Why health-gated deployment?
 
-Automated deployment reduces manual server operations and ensures the deployed application passes explicit health checks before the workflow reports success.
+A container that starts successfully is not necessarily a working ML service. The deployment therefore verifies that the API is responding **and that the model is actually loaded**.
 
 ---
 
-## Reproducibility
+# 📦 Reproducibility
 
-The training pipeline records important experiment metadata and uses a fixed random seed:
+The training pipeline uses:
 
-~~~text
+```text
 SEED = 42
-~~~
+```
 
-The checkpoint stores:
+and records important checkpoint metadata.
 
-- class mapping
-- architecture identifier
-- image preprocessing configuration
-- validation metrics
-- training phase
-- epoch information
+For serious experiment reproduction, record:
 
-For a reproducible experiment, keep the dataset version, source commit, Python environment, and model artifact together as part of the experiment record.
+```text
+Dataset version
+   +
+Git commit
+   +
+Python/dependency versions
+   +
+Training configuration
+   +
+Model checkpoint
+```
+
+The checkpoint itself contains the class mapping and preprocessing metadata required by the serving pipeline.
 
 ---
 
-## Limitations
+# ⚠️ Limitations
 
-This is a production-oriented classification system, but it is not a general-purpose cultural understanding model.
+This system is a **closed-set image classifier** for the classes represented in the training data. It is not a general-purpose cultural understanding model.
 
 Current limitations include:
 
-- predictions depend on the quality and diversity of the training dataset
-- confidence is not a calibrated probability of correctness
-- the confidence threshold is heuristic
-- the system is optimized for the classes represented in the training dataset
-- CPU inference can be slower than GPU inference
-- the API does not identify arbitrary clothing outside its trained label space
-- S3 availability and permissions are required during application startup
+- performance depends on dataset quality and diversity
+- the test split does not currently contain examples for every model class
+- softmax confidence is not calibrated probability
+- the uncertainty mechanism is threshold-based rather than a formal OOD model
+- predictions outside the learned class distribution may still be assigned to a known class
+- CPU inference is slower than GPU inference
+- AWS/S3 access is required during production startup
+- the model is currently optimized for a fixed 24-class label space
+
+These limitations are documented deliberately so that benchmark numbers are not overstated.
 
 ---
 
-## Future Improvements
+# 🚧 Future Roadmap
 
-Potential next-stage improvements include:
+Potential improvements:
 
-- calibrated confidence scores
-- stronger OOD detection
-- model quantization for faster CPU inference
-- GPU inference for higher throughput
-- automated model versioning
-- experiment tracking
-- dataset versioning
-- model monitoring
-- latency and throughput benchmarks
-- automated integration tests against the deployed API
-- HTTPS behind a production reverse proxy
-- infrastructure-as-code for AWS resources
-- canary or blue/green deployments
-- automated rollback on failed health checks
+- [ ] Add complete test coverage for all 24 classes
+- [ ] Calibrate confidence scores
+- [ ] Add a dedicated OOD detection method
+- [ ] Add automated API integration tests
+- [ ] Add latency and throughput benchmarks
+- [ ] Add model versioning
+- [ ] Add experiment tracking
+- [ ] Add dataset versioning
+- [ ] Add model monitoring
+- [ ] Quantize the model for faster CPU inference
+- [ ] Add GPU inference where appropriate
+- [ ] Add HTTPS behind a production reverse proxy
+- [ ] Add infrastructure-as-code for AWS
+- [ ] Add blue/green or canary deployment
+- [ ] Add automatic rollback on failed deployment
+- [ ] Add API authentication/rate limiting for public production use
 
 ---
 
-## Technology Stack
+# 🛠️ Technology Stack
 
 | Layer | Technology |
 |---|---|
 | Language | Python 3.10+ |
 | Deep Learning | PyTorch |
-| Vision | Torchvision |
-| Model | ResNet50 |
-| ML Metrics | scikit-learn |
-| Image Processing | Pillow |
+| Computer Vision | Torchvision + Pillow |
+| Architecture | ResNet50 |
+| Metrics | scikit-learn |
 | API | FastAPI |
-| API Server | Uvicorn |
-| Containerization | Docker |
-| Object Storage | Amazon S3 |
-| Compute | Amazon EC2 |
+| ASGI Server | Uvicorn |
+| Validation | Pydantic |
 | AWS SDK | boto3 |
-| Automation | GitHub Actions |
-| Dataset Format | ImageFolder |
+| Model Storage | Amazon S3 |
+| Compute | Amazon EC2 |
+| Containerization | Docker |
+| CI/CD | GitHub Actions |
+| Dataset Format | PyTorch ImageFolder |
 
 ---
 
-## Repository
+# 🌟 Why This Project Matters
 
-**GitHub:**  
+This project demonstrates the full lifecycle of a machine-learning application:
+
+```text
+ML Research
+    ↓
+Dataset Engineering
+    ↓
+Transfer Learning
+    ↓
+Fine-Tuning
+    ↓
+Evaluation
+    ↓
+Model Packaging
+    ↓
+API Engineering
+    ↓
+Containerization
+    ↓
+Cloud Storage
+    ↓
+Cloud Deployment
+    ↓
+Automated CI/CD
+    ↓
+Production Health Verification
+```
+
+It therefore serves as a portfolio project demonstrating **computer vision + machine learning engineering + backend API development + Docker + AWS + deployment automation** in one system.
+
+---
+
+# 🔗 Project Links
+
+**Repository**
+
 https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition
 
+**API documentation when deployed**
+
+```text
+/docs
+/redoc
+```
+
 ---
 
-## Author
+# 👨‍💻 Author
 
-**Aayush Oli**
+## Aayush Oli
 
-AI/ML Engineer in training focused on computer vision, machine learning systems, APIs, cloud deployment, and production-oriented AI engineering.
+AI/ML Engineer in training focused on:
+
+- Computer Vision
+- Deep Learning
+- Machine Learning Engineering
+- FastAPI
+- Docker
+- AWS
+- Production AI systems
 
 ---
 
-## License
+# 📄 License
 
-Add the project's chosen open-source license before distributing the repository publicly.
+A formal open-source license has not yet been selected for this repository.
+
+If this project is intended for public reuse, add an appropriate license such as MIT before presenting it as an open-source project.
+
+---
+
+<p align="center">
+  <b>🇳🇵 Built to preserve, understand, and digitally recognize Nepal's cultural heritage.</b>
+</p>
