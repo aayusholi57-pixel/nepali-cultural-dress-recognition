@@ -504,7 +504,19 @@ print("PHASE 2")
 print("Fine-tuning ResNet50 layer4 + classifier")
 print("=" * 60)
 
-model.unfreeze_layer4()
+# Safely unfreeze layer4 and fc. Some model implementations may define a
+# non-callable attribute with the same name (for example a tensor), so guard
+# the method call explicitly and fall back to direct parameter updates.
+unfreeze_layer4 = getattr(model, "unfreeze_layer4", None)
+if callable(unfreeze_layer4) and not isinstance(unfreeze_layer4, torch.Tensor):
+    unfreeze_layer4()
+else:
+    if hasattr(model, "backbone") and hasattr(model.backbone, "layer4"):
+        for parameter in model.backbone.layer4.parameters():
+            parameter.requires_grad = True
+    if hasattr(model, "backbone") and hasattr(model.backbone, "fc"):
+        for parameter in model.backbone.fc.parameters():
+            parameter.requires_grad = True
 
 layer4_parameters = list(
     model.backbone.layer4.parameters()
