@@ -67,6 +67,7 @@ The trained model recognizes **24 target classes** and returns ranked prediction
 - 🔐 **AWS credential-chain support / EC2 IAM role compatibility**
 - 🛡️ **Non-root container runtime**
 - 📦 **Self-describing model checkpoint metadata**
+- 🧪 **V4 custom ResNet50 + Conv2D + Linear experimental pipeline**
 - 🧪 **Dataset and class-consistency validation**
 
 ---
@@ -156,6 +157,8 @@ GitHub Actions
 ## Model
 
 The project uses **ResNet50** with ImageNet pretrained weights.
+
+**V3 is the production benchmark, while V4 is documented as an experimental custom-head architecture.**
 
 The original ResNet50 classification layer is replaced with a custom classification head:
 
@@ -465,6 +468,200 @@ V3 is the result to use when describing the current model in a portfolio, interv
 | Production artifact path | models/resnet50/best_resnet50.pth in S3 |
 
 This V3 record supersedes the older benchmark numbers previously documented in this README.
+
+
+---
+
+# 🧪 V4 Custom ResNet50 Experiment
+
+V4 was developed as an **experimental architecture** following the mentor-guided design requirement: keep ResNet50 as the pretrained feature extractor, then add custom convolutional and linear layers before the final 24-class classifier.
+
+> **Production status:** V4 is **not** the production benchmark. V3 remains the production model because V3 achieves higher test performance. V4 is retained as a documented architecture experiment and demonstrates custom neural-network layers on top of a pretrained ResNet50 backbone.
+
+## V4 Architecture
+
+~~~text
+Input
+224 × 224 × 3
+        │
+        ▼
+Pretrained ResNet50 Backbone
+        │
+        ▼
+Feature Map
+2048 × 7 × 7
+        │
+        ▼
+Custom Conv2D #1
+2048 → 512
+Kernel: 3 × 3
+Padding: 1
+        │
+        ▼
+ReLU
+        │
+        ▼
+Custom Conv2D #2
+512 → 256
+Kernel: 3 × 3
+Padding: 1
+        │
+        ▼
+ReLU
+        │
+        ▼
+Global Average Pooling
+        │
+        ▼
+256
+        │
+        ▼
+Custom Linear #1
+256 → 128
+        │
+        ▼
+ReLU
+        │
+        ▼
+Dropout(0.2)
+        │
+        ▼
+Custom Linear #2
+128 → 24
+        │
+        ▼
+24-class output
+~~~
+
+Implementation:
+
+~~~text
+src/v4_model.py
+~~~
+
+The V4 model is intentionally different from the production V3 classification head. It uses the ResNet50 convolutional feature extractor and adds **two custom Conv2D layers, global average pooling, and two custom Linear layers**.
+
+## V4 Training Strategy
+
+### Phase 1 — Train custom layers
+
+~~~text
+ResNet50 backbone      → Frozen
+Custom Conv2D layers   → Trainable
+Custom Linear layers   → Trainable
+
+Epochs                 → 5
+Learning rate          → 1e-3
+~~~
+
+### Phase 2 — Fine-tune layer4
+
+~~~text
+ResNet50 layers 1–3   → Frozen
+ResNet50 layer4       → Trainable
+Custom head           → Trainable
+
+Epochs                → 5
+Layer4 learning rate  → 1e-5
+Custom head LR        → 1e-3
+~~~
+
+Additional configuration:
+
+| Component | V4 configuration |
+|---|---|
+| Backbone | Pretrained ResNet50 |
+| Input size | 224 × 224 |
+| Classes | 24 |
+| Batch size | 8 |
+| Phase 1 | 5 epochs |
+| Phase 2 | 5 epochs |
+| Total epochs | **10** |
+| Optimizer | AdamW |
+| Weight decay | 1e-4 |
+| Loss | Inverse-square-root weighted Cross Entropy |
+| Dropout | 0.2 |
+| Selection metric | Validation Macro F1 |
+| Training device | CPU |
+
+Training implementation:
+
+~~~text
+src/train_v4.py
+~~~
+
+Run:
+
+~~~bash
+python -m src.train_v4
+~~~
+
+Before training, the architecture can be validated with:
+
+~~~bash
+python -m src.test_v4_model
+~~~
+
+## V4 Evaluation
+
+The V4 checkpoint is evaluated independently from the production V3 checkpoint.
+
+~~~text
+src/evaluate_v4.py
+~~~
+
+Run:
+
+~~~bash
+python -m src.evaluate_v4
+~~~
+
+The evaluator correctly handles the current test-set structure:
+
+~~~text
+Model classes       → 24
+Test classes        → 23
+Missing test class  → naugedi
+Test images         → 192
+~~~
+
+The test labels are explicitly remapped from the test ImageFolder indices back to the original 24-class model indices. This prevents the missing naugedi class from shifting the remaining class indices.
+
+### Verified V4 Results
+
+| Metric | V4 result |
+|---|---:|
+| Test images | **192** |
+| Model classes | **24** |
+| Test classes represented | **23 / 24** |
+| Missing test class | **naugedi** |
+| Test accuracy | **75.00%** |
+| Test Macro F1 | **64.01%** |
+| Test Weighted F1 | **73.45%** |
+| Best validation Macro F1 | **63.10%** |
+| Best checkpoint | **Phase 2, epoch 3** |
+| Checkpoint | models/resnet50_custom_v4/best_resnet50_custom_v4.pth |
+
+V4's best checkpoint was selected by **validation Macro F1**, not by validation accuracy. The highest validation accuracy occurred later, but the checkpoint-selection rule remained Macro F1 to give equal importance to the classes.
+
+### V3 vs V4
+
+| Model | Architecture | Test Accuracy | Test Macro F1 | Test Weighted F1 | Status |
+|---|---|---:|---:|---:|---|
+| **V3** | ResNet50 + custom classification head | **82.29%** | **70.90%** | **82.73%** | **Production benchmark** |
+| **V4** | ResNet50 + custom Conv2D + Linear layers | 75.00% | 64.01% | 73.45% | Experimental |
+
+Therefore, the repository does **not** claim that V4 improves the model's benchmark performance. V4 demonstrates the requested custom architecture while V3 remains the stronger evaluated model.
+
+## V4 Artifacts
+
+~~~text
+models/
+└── resnet50_custom_v4/
+    ├── best_resnet50_custom_v4.pth
+    ├── training_history_v4.json
+    └── test_results_v4.json
+~~~
 
 ---
 
@@ -904,6 +1101,10 @@ nepali-cultural-dress-recognition/
 │   ├── __init__.py
 │   ├── dataset_prep.py             # Dataset validation and class checks
 │   ├── evaluate.py                 # Test evaluation + artifacts
+│   ├── evaluate_v4.py              # V4 test evaluation
+│   ├── test_v4_model.py            # V4 architecture tests
+│   ├── train_v4.py                 # V4 two-stage training
+│   └── v4_model.py                 # V4 custom ResNet50 architecture
 │   ├── model.py                    # ResNet50 architecture
 │   ├── train.py                    # Two-phase training
 │   └── utils.py                    # Reserved utility module
