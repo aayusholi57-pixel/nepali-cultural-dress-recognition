@@ -1,4 +1,5 @@
 import os
+import json
 import random
 import numpy as np
 import torch
@@ -6,110 +7,107 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from sklearn.metrics import accuracy_score, f1_score
-from tqdm import tqdm
 
 from src.model import NepaliDressClassifier
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
 
 DATA_DIR = "data"
-MODEL_DIR = os.path.join("models", "resnet50")
+TRAIN_DIR = os.path.join(DATA_DIR, "train")
+VAL_DIR = os.path.join(DATA_DIR, "val")
+MODEL_DIR = "models"
 
-IMAGE_SIZE = 224
 BATCH_SIZE = 8
 
-STAGE1_EPOCHS = 5
-STAGE2_EPOCHS = 15
+PHASE1_EPOCHS = 5
+PHASE2_EPOCHS = 15
 
-# Stage 1: classifier only
-STAGE1_LR = 0.001
+IMAGE_SIZE = 224
 
-# Stage 2: different learning rates
-CLASSIFIER_LR = 0.0001
-BACKBONE_LR = 0.00001
-
-WEIGHT_DECAY = 0.01
+LEARNING_RATE_HEAD = 1e-3
+LEARNING_RATE_LAYER4 = 1e-5
+LEARNING_RATE_FC = 1e-4
 
 SEED = 42
 
-BEST_MODEL_PATH = os.path.join(
-    MODEL_DIR,
-    "best_resnet50.pth"
-)
+# Use a limited number of CPU threads so the laptop remains responsive.
+CPU_THREADS = 4
 
 
 # ============================================================
 # REPRODUCIBILITY
 # ============================================================
 
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+torch.set_num_threads(CPU_THREADS)
 
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+device = torch.device("cpu")
 
+print("=" * 60)
+print("Nepali Cultural Dress Recognition")
+print("CPU Training - ResNet50")
+print("=" * 60)
 
-set_seed(SEED)
-
-
-# ============================================================
-# DEVICE
-# ============================================================
-
-if torch.cuda.is_available():
-    DEVICE = torch.device("cuda")
-else:
-    DEVICE = torch.device("cpu")
-
-print(f"Device: {DEVICE}")
+print(f"Device: {device}")
+print(f"CPU threads: {CPU_THREADS}")
+print(f"Batch size: {BATCH_SIZE}")
+print()
 
 
 # ============================================================
-# IMAGE NORMALIZATION
+# DIRECTORIES
 # ============================================================
 
-MEAN = [0.485, 0.456, 0.406]
-STD = [0.229, 0.224, 0.225]
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+if not os.path.exists(TRAIN_DIR):
+    raise FileNotFoundError(f"Training directory not found: {TRAIN_DIR}")
+
+if not os.path.exists(VAL_DIR):
+    raise FileNotFoundError(f"Validation directory not found: {VAL_DIR}")
 
 
 # ============================================================
-# TRAINING TRANSFORMS
+# IMAGE TRANSFORMS
 # ============================================================
+
+imagenet_mean = [0.485, 0.456, 0.406]
+imagenet_std = [0.229, 0.224, 0.225]
+
 
 train_transform = transforms.Compose([
     transforms.RandomResizedCrop(
         IMAGE_SIZE,
-        scale=(0.80, 1.0)
+        scale=(0.8, 1.0)
     ),
-    transforms.RandomHorizontalFlip(p=0.5),
-    transforms.RandomRotation(degrees=10),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(10),
     transforms.ColorJitter(
-        brightness=0.20,
-        contrast=0.20,
-        saturation=0.15
+        brightness=0.2,
+        contrast=0.2,
+        saturation=0.1
     ),
     transforms.ToTensor(),
-    transforms.Normalize(mean=MEAN, std=STD)
+    transforms.Normalize(
+        mean=imagenet_mean,
+        std=imagenet_std
+    ),
 ])
 
 
-# ============================================================
-# VALIDATION / TEST TRANSFORMS
-# ============================================================
-
-eval_transform = transforms.Compose([
+val_transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=MEAN, std=STD)
+    transforms.Normalize(
+        mean=imagenet_mean,
+        std=imagenet_std
+    ),
 ])
 
 
@@ -117,53 +115,76 @@ eval_transform = transforms.Compose([
 # DATASETS
 # ============================================================
 
-train_dir = os.path.join(DATA_DIR, "train")
-val_dir = os.path.join(DATA_DIR, "val")
-
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-for dataset_dir, label in [(train_dir, "training"), (val_dir, "validation")]:
-    if not os.path.isdir(dataset_dir):
-        raise FileNotFoundError(f"{label.capitalize()} dataset directory not found: {dataset_dir}")
+print("Loading datasets...")
 
 train_dataset = datasets.ImageFolder(
-    train_dir,
+    TRAIN_DIR,
     transform=train_transform
 )
 
 val_dataset = datasets.ImageFolder(
-    val_dir,
-    transform=eval_transform
+    VAL_DIR,
+    transform=val_transform
 )
-
-
-# ============================================================
-# CLASS INFORMATION
-# ============================================================
 
 class_names = train_dataset.classes
 num_classes = len(class_names)
 
-print(f"Classes: {num_classes}")
-print("\nClasses:")
-for index, class_name in enumerate(class_names):
-    print(f"  {index} -> {class_name}")
-
-
-# ============================================================
-# CHECK CLASS MAPPING
-# ============================================================
-
-if train_dataset.class_to_idx != val_dataset.class_to_idx:
-    raise ValueError("Train and validation class mappings do not match.")
-
-
-# ============================================================
-# DATASET INFORMATION
-# ============================================================
-
-print(f"\nTraining images: {len(train_dataset)}")
+print(f"Number of classes: {num_classes}")
+print(f"Training images: {len(train_dataset)}")
 print(f"Validation images: {len(val_dataset)}")
+print()
+
+print("Classes:")
+for index, name in enumerate(class_names):
+    print(f"{index}: {name}")
+
+print()
+
+
+# ============================================================
+# CHECK CLASS CONSISTENCY
+# ============================================================
+
+if train_dataset.classes != val_dataset.classes:
+    raise RuntimeError(
+        "Train and validation class folders do not match."
+    )
+
+
+# ============================================================
+# CLASS WEIGHTS
+# ============================================================
+
+print("Calculating class weights...")
+
+targets = np.array(train_dataset.targets)
+
+class_counts = np.bincount(
+    targets,
+    minlength=num_classes
+)
+
+# Inverse square-root weighting is safer than
+# inverse-frequency weighting for highly imbalanced data.
+class_weights = 1.0 / np.sqrt(
+    np.maximum(class_counts, 1)
+)
+
+# Normalize weights so their mean is approximately 1.
+class_weights = class_weights / class_weights.mean()
+
+class_weights_tensor = torch.tensor(
+    class_weights,
+    dtype=torch.float32,
+    device=device
+)
+
+print("Class counts:")
+for index, count in enumerate(class_counts):
+    print(f"{index}: {class_names[index]} -> {count}")
+
+print()
 
 
 # ============================================================
@@ -175,7 +196,7 @@ train_loader = DataLoader(
     batch_size=BATCH_SIZE,
     shuffle=True,
     num_workers=0,
-    pin_memory=torch.cuda.is_available()
+    pin_memory=False
 )
 
 val_loader = DataLoader(
@@ -183,307 +204,445 @@ val_loader = DataLoader(
     batch_size=BATCH_SIZE,
     shuffle=False,
     num_workers=0,
-    pin_memory=torch.cuda.is_available()
+    pin_memory=False
 )
 
 
 # ============================================================
-# CREATE MODEL
+# MODEL
 # ============================================================
+
+print("Creating ResNet50 model...")
 
 model = NepaliDressClassifier(
-    num_classes=num_classes,
-    pretrained=True
+    num_classes=num_classes
 )
-model = model.to(DEVICE)
+
+model = model.to(device)
 
 
 # ============================================================
-# CLASS WEIGHTS
+# LOSS
 # ============================================================
 
-class_counts = np.bincount(
-    train_dataset.targets,
-    minlength=num_classes
-).astype(np.float32)
-
-print("\nClass counts:")
-for index, count in enumerate(class_counts):
-    print(f"  {class_names[index]}: {count:.0f}")
-
-safe_class_counts = np.where(class_counts == 0, 1.0, class_counts)
-class_weights = len(train_dataset) / (num_classes * safe_class_counts)
-class_weights = torch.tensor(class_weights, dtype=torch.float32).to(DEVICE)
-
-print("\nClass weights:")
-for index, weight in enumerate(class_weights):
-    print(f"  {class_names[index]}: {weight.item():.3f}")
-
-
-# ============================================================
-# LOSS FUNCTION
-# ============================================================
-
-criterion = nn.CrossEntropyLoss(weight=class_weights)
+criterion = nn.CrossEntropyLoss(
+    weight=class_weights_tensor
+)
 
 
 # ============================================================
 # TRAINING FUNCTION
 # ============================================================
 
-def train_one_epoch(model, loader, criterion, optimizer, device):
+def train_one_epoch(model, loader, criterion, optimizer):
     model.train()
 
     running_loss = 0.0
     all_predictions = []
     all_targets = []
 
-    progress_bar = tqdm(loader, desc="Training", leave=False)
+    for images, labels in loader:
 
-    for images, targets in progress_bar:
         images = images.to(device)
-        targets = targets.to(device)
+        labels = labels.to(device)
 
         optimizer.zero_grad()
 
         outputs = model(images)
-        loss = criterion(outputs, targets)
+
+        loss = criterion(outputs, labels)
 
         loss.backward()
+
         optimizer.step()
 
         running_loss += loss.item() * images.size(0)
 
-        predictions = torch.argmax(outputs, dim=1)
-        all_predictions.extend(predictions.detach().cpu().numpy())
-        all_targets.extend(targets.detach().cpu().numpy())
+        predictions = torch.argmax(
+            outputs,
+            dim=1
+        )
 
-        progress_bar.set_postfix(loss=f"{loss.item():.4f}")
+        all_predictions.extend(
+            predictions.detach().cpu().numpy()
+        )
+
+        all_targets.extend(
+            labels.detach().cpu().numpy()
+        )
 
     epoch_loss = running_loss / len(loader.dataset)
-    epoch_accuracy = accuracy_score(all_targets, all_predictions)
-    epoch_f1 = f1_score(
+
+    accuracy = accuracy_score(
+        all_targets,
+        all_predictions
+    )
+
+    macro_f1 = f1_score(
         all_targets,
         all_predictions,
         average="macro",
         zero_division=0
     )
 
-    return epoch_loss, epoch_accuracy, epoch_f1
+    return epoch_loss, accuracy, macro_f1
 
 
 # ============================================================
 # VALIDATION FUNCTION
 # ============================================================
 
-def validate(model, loader, criterion, device):
+def validate(model, loader, criterion):
+
     model.eval()
 
     running_loss = 0.0
+
     all_predictions = []
     all_targets = []
 
     with torch.no_grad():
-        progress_bar = tqdm(loader, desc="Validation", leave=False)
 
-        for images, targets in progress_bar:
+        for images, labels in loader:
+
             images = images.to(device)
-            targets = targets.to(device)
+            labels = labels.to(device)
 
             outputs = model(images)
-            loss = criterion(outputs, targets)
+
+            loss = criterion(
+                outputs,
+                labels
+            )
 
             running_loss += loss.item() * images.size(0)
 
-            predictions = torch.argmax(outputs, dim=1)
-            all_predictions.extend(predictions.cpu().numpy())
-            all_targets.extend(targets.cpu().numpy())
+            predictions = torch.argmax(
+                outputs,
+                dim=1
+            )
+
+            all_predictions.extend(
+                predictions.cpu().numpy()
+            )
+
+            all_targets.extend(
+                labels.cpu().numpy()
+            )
 
     epoch_loss = running_loss / len(loader.dataset)
-    epoch_accuracy = accuracy_score(all_targets, all_predictions)
-    epoch_f1 = f1_score(
+
+    accuracy = accuracy_score(
+        all_targets,
+        all_predictions
+    )
+
+    macro_f1 = f1_score(
         all_targets,
         all_predictions,
         average="macro",
         zero_division=0
     )
 
-    return epoch_loss, epoch_accuracy, epoch_f1
+    weighted_f1 = f1_score(
+        all_targets,
+        all_predictions,
+        average="weighted",
+        zero_division=0
+    )
+
+    return (
+        epoch_loss,
+        accuracy,
+        macro_f1,
+        weighted_f1
+    )
 
 
 # ============================================================
-# SAVE BEST MODEL
+# SAVE CHECKPOINT
 # ============================================================
 
-def save_best_model(model, epoch, val_accuracy, val_macro_f1, phase):
-    os.makedirs(MODEL_DIR, exist_ok=True)
+def save_checkpoint(
+    model,
+    epoch,
+    val_accuracy,
+    val_macro_f1,
+    phase
+):
 
     checkpoint = {
-        "artifact_version": "2.0",
-        "model_name": "resnet50_nepali_cultural_dress",
+        "artifact_version": "1.0",
+        "model_name": "resnet50",
         "state_dict": model.state_dict(),
         "class_names": class_names,
         "num_classes": num_classes,
         "image_size": IMAGE_SIZE,
-        "mean": MEAN,
-        "std": STD,
+        "mean": imagenet_mean,
+        "std": imagenet_std,
         "epoch": epoch,
         "val_accuracy": val_accuracy,
         "val_macro_f1": val_macro_f1,
         "phase": phase,
     }
 
-    torch.save(checkpoint, BEST_MODEL_PATH)
-    print(f"\nSaved best model -> {BEST_MODEL_PATH}")
+    path = os.path.join(
+        MODEL_DIR,
+        "best_resnet50.pth"
+    )
+
+    torch.save(
+        checkpoint,
+        path
+    )
+
+    print(f"Saved best model -> {path}")
 
 
 # ============================================================
-# STAGE 1
-# ============================================================
-# Freeze ResNet50 backbone.
-# Train only the new classification head.
+# PHASE 1
 # ============================================================
 
-print("\n")
-print("=" * 70)
-print("STAGE 1: TRAIN CLASSIFIER HEAD")
-print("=" * 70)
+print("=" * 60)
+print("PHASE 1")
+print("Training classification head only")
+print("=" * 60)
 
 model.freeze_backbone()
 
-trainable_parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
-optimizer = torch.optim.AdamW(
-    trainable_parameters,
-    lr=STAGE1_LR,
-    weight_decay=WEIGHT_DECAY
+trainable_parameters = sum(
+    p.numel()
+    for p in model.parameters()
+    if p.requires_grad
 )
 
-best_val_f1 = -1.0
+print(
+    f"Trainable parameters: "
+    f"{trainable_parameters:,}"
+)
 
-for epoch in range(1, STAGE1_EPOCHS + 1):
-    print(f"\nStage 1 Epoch {epoch}/{STAGE1_EPOCHS}")
+optimizer = torch.optim.AdamW(
+    filter(
+        lambda p: p.requires_grad,
+        model.parameters()
+    ),
+    lr=LEARNING_RATE_HEAD,
+    weight_decay=1e-4
+)
+
+best_macro_f1 = -1.0
+
+history = []
+
+
+for epoch in range(PHASE1_EPOCHS):
+
+    print()
+    print(
+        f"Phase 1 - Epoch "
+        f"{epoch + 1}/{PHASE1_EPOCHS}"
+    )
 
     train_loss, train_acc, train_f1 = train_one_epoch(
         model,
         train_loader,
         criterion,
-        optimizer,
-        DEVICE
+        optimizer
     )
 
-    val_loss, val_acc, val_f1 = validate(
+    val_loss, val_acc, val_f1, val_weighted_f1 = validate(
         model,
         val_loader,
-        criterion,
-        DEVICE
+        criterion
     )
 
-    print(f"\nTrain Loss: {train_loss:.4f}")
-    print(f"Train Acc:  {train_acc:.4f}")
-    print(f"Train F1:   {train_f1:.4f}")
-    print(f"Val Loss:   {val_loss:.4f}")
-    print(f"Val Acc:    {val_acc:.4f}")
-    print(f"Val F1:     {val_f1:.4f}")
+    print(
+        f"Train Loss: {train_loss:.4f} | "
+        f"Train Acc: {train_acc:.4f} | "
+        f"Train F1: {train_f1:.4f}"
+    )
 
-    if val_f1 > best_val_f1:
-        best_val_f1 = val_f1
-        save_best_model(
-            model=model,
-            epoch=epoch,
-            val_accuracy=val_acc,
-            val_macro_f1=val_f1,
-            phase="stage1"
+    print(
+        f"Val Loss: {val_loss:.4f} | "
+        f"Val Acc: {val_acc:.4f} | "
+        f"Val Macro F1: {val_f1:.4f} | "
+        f"Val Weighted F1: {val_weighted_f1:.4f}"
+    )
+
+    history.append({
+        "phase": 1,
+        "epoch": epoch + 1,
+        "train_loss": train_loss,
+        "train_accuracy": train_acc,
+        "train_macro_f1": train_f1,
+        "val_loss": val_loss,
+        "val_accuracy": val_acc,
+        "val_macro_f1": val_f1,
+        "val_weighted_f1": val_weighted_f1,
+    })
+
+    if val_f1 > best_macro_f1:
+
+        best_macro_f1 = val_f1
+
+        save_checkpoint(
+            model,
+            epoch + 1,
+            val_acc,
+            val_f1,
+            phase=1
         )
 
 
 # ============================================================
-# STAGE 2
-# ============================================================
-# Unfreeze the complete ResNet50.
-# Use separate learning rates for backbone and classifier.
+# PHASE 2
 # ============================================================
 
-print("\n")
-print("=" * 70)
-print("STAGE 2: FULL RESNET50 FINE-TUNING")
-print("=" * 70)
+print()
+print("=" * 60)
+print("PHASE 2")
+print("Fine-tuning ResNet50 layer4 + classifier")
+print("=" * 60)
 
-model.unfreeze_all()
+model.unfreeze_layer4()
 
-backbone_parameters = [
-    parameter
-    for name, parameter in model.backbone.named_parameters()
-    if not name.startswith("fc.")
-]
+layer4_parameters = list(
+    model.backbone.layer4.parameters()
+)
 
-classifier_parameters = model.backbone.fc.parameters()
+fc_parameters = list(
+    model.backbone.fc.parameters()
+)
 
 optimizer = torch.optim.AdamW(
     [
-        {"params": backbone_parameters, "lr": BACKBONE_LR},
-        {"params": classifier_parameters, "lr": CLASSIFIER_LR},
+        {
+            "params": layer4_parameters,
+            "lr": LEARNING_RATE_LAYER4
+        },
+        {
+            "params": fc_parameters,
+            "lr": LEARNING_RATE_FC
+        },
     ],
-    weight_decay=WEIGHT_DECAY,
+    weight_decay=1e-4
 )
 
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    optimizer,
-    T_max=STAGE2_EPOCHS
+trainable_parameters = sum(
+    p.numel()
+    for p in model.parameters()
+    if p.requires_grad
 )
 
-for epoch in range(1, STAGE2_EPOCHS + 1):
-    print(f"\nStage 2 Epoch {epoch}/{STAGE2_EPOCHS}")
+print(
+    f"Trainable parameters: "
+    f"{trainable_parameters:,}"
+)
+
+
+for epoch in range(PHASE2_EPOCHS):
+
+    print()
+    print(
+        f"Phase 2 - Epoch "
+        f"{epoch + 1}/{PHASE2_EPOCHS}"
+    )
 
     train_loss, train_acc, train_f1 = train_one_epoch(
         model,
         train_loader,
         criterion,
-        optimizer,
-        DEVICE
+        optimizer
     )
 
-    val_loss, val_acc, val_f1 = validate(
+    val_loss, val_acc, val_f1, val_weighted_f1 = validate(
         model,
         val_loader,
-        criterion,
-        DEVICE
+        criterion
     )
 
-    print(f"\nTrain Loss: {train_loss:.4f}")
-    print(f"Train Acc:  {train_acc:.4f}")
-    print(f"Train F1:   {train_f1:.4f}")
-    print(f"Val Loss:   {val_loss:.4f}")
-    print(f"Val Acc:    {val_acc:.4f}")
-    print(f"Val F1:     {val_f1:.4f}")
+    print(
+        f"Train Loss: {train_loss:.4f} | "
+        f"Train Acc: {train_acc:.4f} | "
+        f"Train F1: {train_f1:.4f}"
+    )
 
-    print(f"Backbone LR: {optimizer.param_groups[0]['lr']:.8f}")
-    print(f"Classifier LR: {optimizer.param_groups[1]['lr']:.8f}")
+    print(
+        f"Val Loss: {val_loss:.4f} | "
+        f"Val Acc: {val_acc:.4f} | "
+        f"Val Macro F1: {val_f1:.4f} | "
+        f"Val Weighted F1: {val_weighted_f1:.4f}"
+    )
 
-    if val_f1 > best_val_f1:
-        best_val_f1 = val_f1
-        save_best_model(
-            model=model,
-            epoch=epoch,
-            val_accuracy=val_acc,
-            val_macro_f1=val_f1,
-            phase="stage2"
+    history.append({
+        "phase": 2,
+        "epoch": epoch + 1,
+        "train_loss": train_loss,
+        "train_accuracy": train_acc,
+        "train_macro_f1": train_f1,
+        "val_loss": val_loss,
+        "val_accuracy": val_acc,
+        "val_macro_f1": val_f1,
+        "val_weighted_f1": val_weighted_f1,
+    })
+
+    if val_f1 > best_macro_f1:
+
+        best_macro_f1 = val_f1
+
+        save_checkpoint(
+            model,
+            epoch + 1,
+            val_acc,
+            val_f1,
+            phase=2
         )
 
-    scheduler.step()
+
+# ============================================================
+# SAVE TRAINING HISTORY
+# ============================================================
+
+history_path = os.path.join(
+    MODEL_DIR,
+    "training_history.json"
+)
+
+with open(
+    history_path,
+    "w",
+    encoding="utf-8"
+) as f:
+
+    json.dump(
+        history,
+        f,
+        indent=2
+    )
 
 
 # ============================================================
-# TRAINING COMPLETE
+# FINAL MESSAGE
 # ============================================================
 
-print("\n")
-print("=" * 70)
+print()
+print("=" * 60)
 print("TRAINING COMPLETE")
-print("=" * 70)
+print("=" * 60)
 
-print(f"\nBest validation Macro F1: {best_val_f1:.4f}")
-print("Best model saved at:")
-print(BEST_MODEL_PATH)
+print(
+    f"Best validation Macro F1: "
+    f"{best_macro_f1:.4f}"
+)
 
-print("\nOriginal model was NOT overwritten.")
-print(f"Next step: evaluate {BEST_MODEL_PATH} on the test dataset.")
+print(
+    f"Best model: "
+    f"models/best_resnet50.pth"
+)
+
+print(
+    f"History: "
+    f"models/training_history.json"
+)
+
+print("=" * 60)
