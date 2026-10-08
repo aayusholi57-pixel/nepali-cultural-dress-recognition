@@ -49,11 +49,22 @@ The trained model recognizes **24 target classes** and returns ranked prediction
 ### Current repository status
 
 - **Production benchmark:** V3
-- **Experimental architecture:** V4
+- **Experimental models:** Hybrid V1 and V4
+- **Latest model code:** src/hybrid_model.py, src/train_hybrid.py, src/evaluate_hybrid.py
 - **Deployment target:** Amazon EC2 + Docker
 - **Model storage:** Amazon S3
 - **CI/CD:** GitHub Actions deployment workflow on pushes to `main`
 - **Live hosting:** this README documents the deployment configuration; it does **not** claim continuous live availability, which depends on the current EC2 instance and container state.
+
+### Model experiment registry
+
+| Experiment | Architecture | Training schedule | Evaluation status | Role |
+|---|---|---:|---|---|
+| **V3** | ResNet50 + custom Linear head | **5 + 15 = 20 epochs** | **Verified** | **Production benchmark** |
+| **Hybrid V1** | ResNet50 Conv1–Layer2 + custom CNN + custom classifier | **15 epochs** | **Implementation present; benchmark result must be generated from the checkpoint** | Research experiment |
+| **V4** | ResNet50 + custom Conv2D + Linear head | **5 + 5 = 10 epochs** | **Verified** | Research experiment |
+
+> **Important:** the epoch counts above are taken from the actual training scripts currently in the repository. The **15-epoch value belongs to Hybrid V1**. V3 uses the separate 5 + 15 schedule, while V4 uses 5 + 5.
 
 ---
 
@@ -481,11 +492,141 @@ This V3 record supersedes the older benchmark numbers previously documented in t
 
 ---
 
+# 🧪 Hybrid V1 Experiment
+
+Hybrid V1 is a distinct experiment from both V3 and V4. It keeps only the early/mid feature extraction path of pretrained ResNet50 and replaces the later ResNet blocks with a custom CNN and classifier.
+
+```text
+Input 224 × 224
+       │
+       ▼
+Pretrained ResNet50
+       │
+       ├── Conv1
+       ├── BatchNorm
+       ├── ReLU
+       ├── MaxPool
+       ├── Layer1
+       └── Layer2
+              │
+              ▼
+       Feature map: 512 channels
+              │
+              ▼
+       Conv2D 512 → 256
+              │
+              ▼
+       BatchNorm + ReLU
+              │
+              ▼
+       Conv2D 256 → 128
+              │
+              ▼
+       BatchNorm + ReLU
+              │
+              ▼
+       Adaptive Average Pooling
+              │
+              ▼
+       Linear 128 → 128
+              │
+              ▼
+       ReLU + Dropout(0.4)
+              │
+              ▼
+       Linear 128 → 24
+```
+
+Implementation:
+
+```text
+src/hybrid_model.py
+src/train_hybrid.py
+src/evaluate_hybrid.py
+```
+
+## Hybrid V1 Training Configuration
+
+The current source code defines:
+
+| Component | Configuration |
+|---|---|
+| Backbone | ImageNet-pretrained ResNet50 |
+| Selected backbone | Conv1 → Layer1 → Layer2 |
+| Layer3 / Layer4 | Not used |
+| Custom CNN | 512 → 256 → 128 |
+| Classifier | 128 → 128 → 24 |
+| Dropout | 0.4 |
+| Input | 224 × 224 |
+| Batch size | 8 |
+| Epochs | **15** |
+| Learning rate | 1e-3 |
+| Weight decay | 1e-4 |
+| Optimizer | AdamW |
+| Loss | Inverse-square-root weighted Cross Entropy |
+| Seed | 42 |
+| Model selection | Best validation Macro F1 |
+| Device | CUDA when available, otherwise CPU |
+
+So the **15 epochs here are intentional and belong to Hybrid V1**. They are not the V3 Phase-2 value.
+
+Run:
+
+```bash
+python -m src.train_hybrid
+```
+
+Evaluate:
+
+```bash
+python -m src.evaluate_hybrid
+```
+
+### Hybrid V1 result status
+
+The repository currently contains the complete Hybrid V1 architecture, training pipeline, checkpoint-writing logic, and evaluation pipeline, but a verified Hybrid V1 test benchmark is not currently documented.
+
+That is deliberate: **no accuracy or F1 number is claimed until the actual best_hybrid_v1.pth checkpoint has been evaluated.**
+
+Record after evaluation:
+
+```text
+Test accuracy
+Test Macro F1
+Test Weighted F1
+Best validation accuracy
+Best validation Macro F1
+Best epoch
+Confusion matrix
+Per-class report
+```
+
+## Why Hybrid V1 matters
+
+```text
+V3
+Full ResNet50 representation + custom classifier
+        ↓
+Strong production baseline
+
+Hybrid V1
+Early/mid ResNet50 features only + custom CNN
+        ↓
+Reduced-backbone experiment
+
+V4
+Full ResNet50 representation + custom Conv2D + Linear head
+        ↓
+Custom-head experiment
+```
+
+The production decision should be based on the same held-out test split and the same metrics across all experiments.
+
 # 🧪 V4 Custom ResNet50 Experiment
 
 V4 was developed as an **experimental architecture** following the mentor-guided design requirement: keep ResNet50 as the pretrained feature extractor, then add custom convolutional and linear layers before the final 24-class classifier.
 
-> **Production status:** V4 is **not** the production benchmark. V3 remains the production model because V3 achieves higher test performance. V4 is retained as a reproducible architecture experiment. V4 is retained as a documented architecture experiment and demonstrates custom neural-network layers on top of a pretrained ResNet50 backbone.
+> **Production status:** V4 is **not** the production benchmark. V3 remains the production model because V3 achieves higher test performance. V4 is retained as a reproducible architecture experiment and demonstrates custom neural-network layers on top of a pretrained ResNet50 backbone.
 
 ## V4 Architecture
 
@@ -1091,6 +1232,46 @@ http://127.0.0.1:8000/docs
 
 ---
 
+# 🧪 Experiment History
+
+The repository contains three distinct model lines. Keeping them separate makes the project easier to explain to a mentor or interviewer.
+
+```text
+V3
+│
+├── Production baseline
+├── ResNet50 full backbone
+├── 5 + 15 epochs
+└── Verified benchmark: 82.29% test accuracy
+
+Hybrid V1
+│
+├── Research experiment
+├── ResNet50 Conv1–Layer2 only
+├── 15 epochs
+└── Benchmark pending checkpoint evaluation
+
+V4
+│
+├── Research experiment
+├── Full ResNet50 feature extractor
+├── Custom Conv2D + Linear head
+├── 5 + 5 epochs
+└── Verified benchmark: 75.00% test accuracy
+```
+
+### Development timeline
+
+| Stage | Repository work |
+|---|---|
+| V3 | Established the production ResNet50 transfer-learning baseline |
+| Hybrid V1 | Added a reduced-backbone hybrid architecture and independent evaluation pipeline |
+| V4 | Added a custom convolutional classification pipeline and architecture tests |
+| Deployment | Added Docker + S3 + EC2 + GitHub Actions health-gated deployment |
+| Documentation | Consolidated experiments, deployment, evaluation assumptions, and limitations |
+
+**A new architecture is not automatically a better model.** The repository records architecture, training configuration, and measured result separately so the production decision is evidence-based.
+
 # 📁 Repository Structure
 
 ```text
@@ -1110,12 +1291,15 @@ nepali-cultural-dress-recognition/
 │   ├── __init__.py
 │   ├── dataset_prep.py             # Dataset validation and class checks
 │   ├── evaluate.py                 # Test evaluation + artifacts
+│   ├── evaluate_hybrid.py          # Hybrid V1 test evaluation
 │   ├── evaluate_v4.py              # V4 test evaluation
 │   ├── test_v4_model.py            # V4 architecture tests
 │   ├── train_v4.py                 # V4 two-stage training
 │   ├── v4_model.py                 # V4 custom ResNet50 architecture
+│   ├── hybrid_model.py             # Hybrid V1 architecture
 │   ├── model.py                    # ResNet50 architecture
-│   ├── train.py                    # Two-phase training
+│   ├── train.py                    # V3 two-phase training
+│   ├── train_hybrid.py             # Hybrid V1 training
 │   └── utils.py                    # Reserved utility module
 │
 ├── Dockerfile                      # Production container
