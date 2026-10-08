@@ -220,7 +220,7 @@ jobs:
             test -f api/schemas.py
 
             test -f src/__init__.py
-            test -f src/model.py
+            test -f src/v4_model.py
 
             echo "All required files found."
 
@@ -232,25 +232,25 @@ jobs:
             echo "CHECKING MODEL CONFIGURATION"
             echo "=========================================="
 
-            if grep -q "pretrained=False" api/predictor.py; then
+            if grep -q "ResNet50CustomV4" api/predictor.py; then
 
-              echo "Predictor correctly uses pretrained=False."
+              echo "Predictor correctly uses the V4 model."
 
             else
 
-              echo "ERROR: api/predictor.py does not contain pretrained=False."
+              echo "ERROR: api/predictor.py is not configured for ResNet50 Custom V4."
 
               exit 1
 
             fi
 
-            if grep -q "pretrained:" src/model.py; then
+            if grep -q "class ResNet50CustomV4" src/v4_model.py; then
 
-              echo "Model supports pretrained parameter."
+              echo "V4 model architecture detected."
 
             else
 
-              echo "ERROR: src/model.py does not support pretrained parameter."
+              echo "ERROR: V4 model architecture not found."
 
               exit 1
 
@@ -308,7 +308,7 @@ jobs:
               -e AWS_DEFAULT_REGION=ap-southeast-2 \
               -e AWS_REGION=ap-southeast-2 \
               -e S3_BUCKET="${S3_BUCKET:-nepali-cultural-dress-ai-696822062401-ap-southeast-2-an}" \
-              -e S3_MODEL_KEY="${S3_MODEL_KEY:-models/resnet50/best_resnet50.pth}" \
+              -e S3_MODEL_KEY="${S3_MODEL_KEY:-models/resnet50_custom_v4/best_resnet50_custom_v4.pth}" \
               "$IMAGE_NAME"
 
             echo "Container started."

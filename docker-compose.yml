@@ -14,7 +14,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       S3_BUCKET: ${S3_BUCKET:-nepali-cultural-dress-ai-696822062401-ap-southeast-2-an}
-      S3_MODEL_KEY: ${S3_MODEL_KEY:-models/resnet50/best_resnet50.pth}
+      S3_MODEL_KEY: ${S3_MODEL_KEY:-models/resnet50_custom_v4/best_resnet50_custom_v4.pth}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 30s

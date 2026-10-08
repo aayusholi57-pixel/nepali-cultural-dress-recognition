@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Nepali Cultural Dress Recognition API",
     description=(
-        "ResNet50-based image classification API "
+        "ResNet50 Custom V4 image classification API "
         "for Nepali cultural dresses and ornaments."
     ),
     version="1.0.0",
@@ -104,7 +104,7 @@ def model_info():
         )
 
     return {
-        "architecture": "ResNet50",
+        "architecture": "ResNet50 Custom V4",
         "num_classes": predictor_service.num_classes,
         "supported_classes": predictor_service.class_names,
         "device": model_device,

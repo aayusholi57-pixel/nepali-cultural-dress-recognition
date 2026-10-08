@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from PIL import Image, UnidentifiedImageError
 from torchvision import transforms
 
-from src.model import NepaliDressClassifier
+from src.v4_model import ResNet50CustomV4
 
 
 # ============================================================
@@ -22,7 +22,7 @@ S3_BUCKET = os.getenv(
 
 S3_MODEL_KEY = os.getenv(
     "S3_MODEL_KEY",
-    "models/resnet50/best_resnet50.pth",
+    "models/resnet50_custom_v4/best_resnet50_custom_v4.pth",
 )
 
 DEVICE = torch.device(
@@ -98,7 +98,7 @@ class PredictorService:
     def load_model_from_s3(self):
 
         print("=" * 60)
-        print("LOADING RESNET50 MODEL")
+        print("LOADING RESNET50 CUSTOM V4 MODEL")
         print("=" * 60)
 
         print(
@@ -183,7 +183,7 @@ class PredictorService:
             # Create model
             # ------------------------------------------------
 
-            self.model = NepaliDressClassifier(
+            self.model = ResNet50CustomV4(
                 num_classes=self.num_classes,
                 pretrained=False,
             )

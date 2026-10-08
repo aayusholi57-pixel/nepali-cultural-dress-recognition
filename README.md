@@ -1,313 +1,334 @@
 # 🇳🇵 Nepali Cultural Dress Recognition
 
-> **An end-to-end computer vision system for recognizing Nepali cultural dresses and ornaments — from dataset preparation and transfer learning to a production FastAPI service, Docker, Amazon S3, Amazon EC2, and automated CI/CD.**
+> **An end-to-end computer vision system for recognizing Nepali cultural dresses and ornaments using a custom ResNet50 V4 architecture, two-stage training, FastAPI, Docker, Amazon S3, and Amazon EC2.**
 
-[![CI/CD](https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition/actions/workflows/deploy.yml/badge.svg)](https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition/actions/workflows/deploy.yml)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-ResNet50-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Production%20API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-ResNet50%20Custom%20V4-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Inference%20API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![AWS](https://img.shields.io/badge/AWS-S3%20%7C%20EC2-232F3E?logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
-[![License](https://img.shields.io/badge/License-To%20be%20added-lightgrey)](#license)
 
 ---
 
-## 📌 What This Project Does
+## 1. Project Overview
 
-**Nepali Cultural Dress Recognition** is a production-oriented image-classification system that identifies Nepali cultural dresses and ornaments from images.
+**Nepali Cultural Dress Recognition** is a 24-class image-classification system for recognizing Nepali cultural dresses, ornaments, and related accessories.
 
-The project is intentionally built as an **end-to-end ML engineering system**, not only as a notebook or training script:
+The current production workflow uses **ResNet50 Custom V4**. The system combines a pretrained ResNet50 feature extractor with custom convolutional and linear layers, then serves the trained model through FastAPI.
+
+The project covers the complete machine-learning lifecycle:
 
 ```text
 Dataset
-   ↓
-Validation & Preparation
-   ↓
-Augmentation + ImageNet Normalization
-   ↓
-ResNet50 Transfer Learning
-   ↓
-Two-Stage Fine-Tuning
-   ↓
-Validation / Test Evaluation
-   ↓
-Model Checkpoint
-   ↓
+  ↓
+Dataset validation and preparation
+  ↓
+Image preprocessing and augmentation
+  ↓
+Pretrained ResNet50 backbone
+  ↓
+Custom Conv2D layers
+  ↓
+Custom Linear classification head
+  ↓
+Two-stage V4 training
+  ↓
+Validation and test evaluation
+  ↓
+Best V4 checkpoint
+  ↓
 Amazon S3
-   ↓
-FastAPI Inference Service
-   ↓
-Docker Container
-   ↓
-Amazon EC2
-   ↓
-GitHub Actions CI/CD
-```
-
-The trained model recognizes **24 target classes** and returns ranked predictions with confidence scores. If the highest confidence falls below the configured threshold, the API reports the result as **uncertain** rather than presenting it as a confident classification.
-
-### Current repository status
-
-- **Production benchmark:** V3
-- **Experimental models:** Hybrid V1 and V4
-- **Latest model code:** src/hybrid_model.py, src/train_hybrid.py, src/evaluate_hybrid.py
-- **Deployment target:** Amazon EC2 + Docker
-- **Model storage:** Amazon S3
-- **CI/CD:** GitHub Actions deployment workflow on pushes to `main`
-- **Live hosting:** this README documents the deployment configuration; it does **not** claim continuous live availability, which depends on the current EC2 instance and container state.
-
-### Model experiment registry
-
-| Experiment | Architecture | Training schedule | Evaluation status | Role |
-|---|---|---:|---|---|
-| **V3** | ResNet50 + custom Linear head | **5 + 15 = 20 epochs** | **Verified** | **Production benchmark** |
-| **Hybrid V1** | ResNet50 Conv1–Layer2 + custom CNN + custom classifier | **15 epochs** | **Implementation present; benchmark result must be generated from the checkpoint** | Research experiment |
-| **V4** | ResNet50 + custom Conv2D + Linear head | **5 + 5 = 10 epochs** | **Verified** | Research experiment |
-
-> **Important:** the epoch counts above are taken from the actual training scripts currently in the repository. The **15-epoch value belongs to Hybrid V1**. V3 uses the separate 5 + 15 schedule, while V4 uses 5 + 5.
-
----
-
-## ✨ Highlights
-
-- 🧠 **ResNet50 transfer learning** with ImageNet initialization
-- 🎯 **Two-stage fine-tuning** for controlled domain adaptation
-- ⚖️ **Class-imbalance-aware training** using inverse-square-root class weighting
-- 🖼️ **Production-consistent preprocessing** at 224×224
-- 📊 **Accuracy, Macro F1, Weighted F1, classification report, and confusion matrix**
-- 🏷️ **24-class cultural dress / ornament classification**
-- 🔎 **Top-3 inference results**
-- 🚦 **Confidence-based uncertainty detection**
-- ☁️ **Amazon S3 model artifact storage**
-- 🐳 **Dockerized inference**
-- 🚀 **Amazon EC2 deployment**
-- 🔄 **GitHub Actions automated deployment**
-- ❤️ **Health endpoint with model-loaded verification**
-- ℹ️ **Model metadata endpoint**
-- 🔐 **AWS credential-chain support / EC2 IAM role compatibility**
-- 🛡️ **Non-root container runtime**
-- 📦 **Self-describing model checkpoint metadata**
-- 🧪 **V4 custom ResNet50 + Conv2D + Linear experimental pipeline**
-- 🧪 **Dataset and class-consistency validation**
-
----
-
-# 🏗️ System Architecture
-
-```text
-                              ┌──────────────────────┐
-                              │   User / Client      │
-                              │  Image Upload        │
-                              └──────────┬───────────┘
-                                         │
-                                         ▼
-                              ┌──────────────────────┐
-                              │      FastAPI         │
-                              │                      │
-                              │  /                  │
-                              │  /health            │
-                              │  /model-info        │
-                              │  /predict            │
-                              └──────────┬───────────┘
-                                         │
-                                         ▼
-                              ┌──────────────────────┐
-                              │   PredictorService   │
-                              │                      │
-                              │ Validation           │
-                              │ RGB conversion       │
-                              │ Preprocessing        │
-                              │ Inference            │
-                              │ Top-K ranking        │
-                              │ Confidence decision  │
-                              └──────────┬───────────┘
-                                         │
-                                         ▼
-                              ┌──────────────────────┐
-                              │      ResNet50        │
-                              │   24-class model     │
-                              └──────────▲───────────┘
-                                         │
-                               model artifact
-                                         │
-                              ┌──────────┴───────────┐
-                              │      Amazon S3        │
-                              │                      │
-                              │ best_resnet50.pth   │
-                              └──────────────────────┘
-
-
-        ┌───────────────────── CI/CD ─────────────────────┐
-        │                                                   │
-        │  GitHub → GitHub Actions → SSH → EC2 → Docker   │
-        │                                                   │
-        └───────────────────────────────────────────────────┘
-```
-
-### Deployment flow
-
-```text
-git push
-   │
-   ▼
-GitHub Actions
-   │
-   ├── checkout main
-   ├── validate deployment files
-   ├── build Docker image
-   ├── start container
-   ├── verify /health
-   ├── verify model_loaded=true
-   └── verify /model-info
-             │
-             ▼
-         Amazon EC2
-             │
-             ▼
-       FastAPI container
-             │
-             ▼
-        Amazon S3 model
+  ↓
+AWS EC2
+  ↓
+Docker
+  ↓
+FastAPI
+  ↓
+Image prediction
 ```
 
 ---
 
-# 🤖 Machine Learning
+## 2. Current Status
 
-## Model
+| Item | Current value |
+|---|---|
+| Current model | **ResNet50 Custom V4** |
+| Model artifact | `best_resnet50_custom_v4.pth` |
+| Artifact version | **4.0** |
+| Classes | **24** |
+| Total training epochs | **10** |
+| Best checkpoint | **Overall Epoch 8 / Phase 2 Epoch 3** |
+| Validation accuracy | **87.63%** |
+| Validation Macro F1 | **63.10%** |
+| Test accuracy | **75.00%** |
+| Test Macro F1 | **64.01%** |
+| Test Weighted F1 | **73.45%** |
+| Model storage | Amazon S3 |
+| Compute | AWS EC2 |
+| Containerization | Docker |
+| API | FastAPI |
+| Inference device | CPU |
+| Confidence threshold | **0.60** |
 
-The project uses **ResNet50** with ImageNet pretrained weights.
+> **V4 is the current model used by the deployment workflow. V3 is retained only as a previous benchmark for experiment history.**
 
-**V3 is the production benchmark, while V4 is documented as an experimental custom-head architecture.**
+---
 
-The original ResNet50 classification layer is replaced with a custom classification head:
+## 3. Why V4?
+
+The V4 architecture follows the mentor-guided requirement to keep **ResNet50 as the pretrained feature extractor** while adding custom neural-network layers for the final classification stage.
+
+Instead of using the original ResNet50 classification head, V4 adds:
+
+- two custom Conv2D layers
+- global average pooling
+- two custom Linear layers
+- ReLU activations
+- Dropout
+
+This makes the architecture a **ResNet50-based custom classification system**, rather than a plain ResNet50 classifier.
+
+---
+
+# 4. V4 Architecture
 
 ```text
-ResNet50 backbone
+Input Image
+224 × 224 × 3
       │
-      └── 2048 feature representation
-                │
-                ▼
-        Dropout(0.4)
-                │
-                ▼
-          Linear → 512
-                │
-                ▼
-              ReLU
-                │
-                ▼
-          BatchNorm1d(512)
-                │
-                ▼
-          Dropout(0.2)
-                │
-                ▼
-          Linear → 24
-                │
-                ▼
-        Class probabilities
+      ▼
+Image Preprocessing
+Resize + Tensor + ImageNet Normalization
+      │
+      ▼
+PRETRAINED RESNET50 BACKBONE
+      │
+      ├── Conv1
+      ├── BatchNorm
+      ├── ReLU
+      ├── MaxPool
+      ├── Layer1
+      ├── Layer2
+      ├── Layer3
+      └── Layer4
+      │
+      ▼
+Feature Map
+2048 × 7 × 7
+      │
+      ▼
+Custom Conv2D
+2048 → 512
+Kernel 3 × 3
+Padding 1
+      │
+      ▼
+ReLU
+      │
+      ▼
+Custom Conv2D
+512 → 256
+Kernel 3 × 3
+Padding 1
+      │
+      ▼
+ReLU
+      │
+      ▼
+Global Average Pooling
+256 × 7 × 7 → 256 × 1 × 1
+      │
+      ▼
+Flatten
+256
+      │
+      ▼
+Custom Linear
+256 → 128
+      │
+      ▼
+ReLU
+      │
+      ▼
+Dropout
+p = 0.2
+      │
+      ▼
+Custom Linear
+128 → 24
+      │
+      ▼
+24 Class Logits
+      │
+      ▼
+Softmax
+      │
+      ▼
+Top-1 / Top-3 Predictions
 ```
 
-The model is implemented in:
-
-```text
-src/model.py
-```
-
----
-
-# 🎯 Two-Stage Fine-Tuning
-
-Rather than immediately updating the entire pretrained network, training is divided into two controlled phases.
-
-## Phase 1 — Train the classification head
-
-The ResNet50 backbone is frozen.
-
-```text
-Backbone      → Frozen
-Custom head   → Trainable
-Learning rate → 1e-3
-Epochs        → 5
-```
-
-This lets the new classifier learn the target label space before modifying the pretrained feature extractor.
-
-## Phase 2 — Domain adaptation
-
-ResNet50 `layer4` and the classification head are unfrozen.
-
-```text
-Early backbone → Frozen
-layer4         → Trainable
-Classifier     → Trainable
-
-layer4 LR      → 1e-5
-classifier LR  → 1e-4
-Epochs         → 15
-```
-
-This provides controlled adaptation to Nepali cultural clothing imagery while preserving most of the pretrained representation.
-
----
-
-# 📊 Training Configuration
+### Architecture summary
 
 | Component | Configuration |
 |---|---|
-| Architecture | ResNet50 |
+| Input | 224 × 224 × 3 |
+| Backbone | ImageNet-pretrained ResNet50 |
+| Backbone output | 2048 × 7 × 7 |
+| Custom Conv1 | 2048 → 512, 3 × 3, padding 1 |
+| Custom Conv2 | 512 → 256, 3 × 3, padding 1 |
+| Activation | ReLU |
+| Pooling | Adaptive Average Pooling |
+| Custom Linear1 | 256 → 128 |
+| Dropout | 0.2 |
+| Custom Linear2 | 128 → 24 |
+| Output | 24 class logits |
+
+Implementation:
+
+```text
+src/v4_model.py
+```
+
+---
+
+# 5. What Does 2048 × 7 × 7 Mean?
+
+After the ResNet50 backbone, the image becomes a feature representation of:
+
+```text
+2048 channels × 7 × 7 spatial resolution
+```
+
+This does **not** mean 2048 separate images.
+
+It means the backbone produces **2048 feature channels**, where each channel contains a 7 × 7 spatial feature map.
+
+Total feature values:
+
+```text
+2048 × 7 × 7 = 100,352
+```
+
+The custom Conv2D layers reduce the representation:
+
+```text
+2048 channels
+      ↓
+512 channels
+      ↓
+256 channels
+```
+
+The 3 × 3 convolutions use padding 1, so the 7 × 7 spatial size is preserved before global average pooling.
+
+---
+
+# 6. Training Strategy
+
+V4 uses **two-stage training with 10 total epochs**.
+
+```text
+                 V4 TRAINING
+                      │
+          ┌───────────┴───────────┐
+          │                       │
+          ▼                       ▼
+       PHASE 1                 PHASE 2
+      Epochs 1–5              Epochs 6–10
+          │                       │
+          │                       │
+   ResNet50 frozen        Layers 1–3 frozen
+   Custom layers train    Layer 4 trainable
+                          Custom layers train
+          │                       │
+          └───────────┬───────────┘
+                      ▼
+             Validation each epoch
+                      │
+                      ▼
+          Best checkpoint by Macro F1
+                      │
+                      ▼
+              Epoch 8 / 10
+          Phase 2, Epoch 3
+```
+
+### Phase 1 — Custom head training
+
+| Component | State |
+|---|---|
+| ResNet50 backbone | Frozen |
+| ResNet50 Layer 1 | Frozen |
+| ResNet50 Layer 2 | Frozen |
+| ResNet50 Layer 3 | Frozen |
+| ResNet50 Layer 4 | Frozen |
+| Custom Conv1 | Trainable |
+| Custom Conv2 | Trainable |
+| Custom Linear1 | Trainable |
+| Custom Linear2 | Trainable |
+| Epochs | 5 |
+| Learning rate | 1e-3 |
+
+### Phase 2 — Layer 4 fine-tuning
+
+| Component | State |
+|---|---|
+| ResNet50 Layers 1–3 | Frozen |
+| ResNet50 Layer 4 | Trainable |
+| Custom Conv1 | Trainable |
+| Custom Conv2 | Trainable |
+| Custom Linear1 | Trainable |
+| Custom Linear2 | Trainable |
+| Epochs | 5 |
+| Layer 4 learning rate | 1e-5 |
+| Custom-layer learning rate | 1e-3 |
+
+---
+
+# 7. Training Configuration
+
+| Setting | V4 value |
+|---|---|
+| Architecture | ResNet50 Custom V4 |
 | Initialization | ImageNet pretrained |
-| Number of classes | 24 |
 | Input size | 224 × 224 |
 | Batch size | 8 |
 | Phase 1 | 5 epochs |
-| Phase 2 | 15 epochs |
-| Head learning rate | 1e-3 |
-| Layer4 learning rate | 1e-5 |
-| Fine-tuned head learning rate | 1e-4 |
+| Phase 2 | 5 epochs |
+| Total | **10 epochs** |
 | Optimizer | AdamW |
 | Weight decay | 1e-4 |
 | Loss | Weighted Cross Entropy |
-| Class weighting | Inverse square root |
-| Selection metric | Validation Macro F1 |
+| Class weighting | Inverse square-root |
+| Dropout | 0.2 |
 | Random seed | 42 |
-| Training target | CPU-compatible |
-| Total training schedule | **20 epochs (5 + 15)** |
-| Best V3 checkpoint | **Phase 2, epoch 7** |
+| Training device | CPU |
+| Selection metric | Validation Macro F1 |
 
-Run training with:
-
-```bash
-python -m src.train
-```
-
----
-
-# ⚖️ Class Imbalance Strategy
-
-The training set is not perfectly balanced across classes.
-
-Instead of using raw inverse-frequency weighting, the project uses:
+Training implementation:
 
 ```text
-weight(class) = 1 / sqrt(class_count)
+src/train_v4.py
 ```
 
-The resulting weights are normalized so their mean is approximately 1.
+Run:
 
-This is deliberately less aggressive than direct inverse-frequency weighting and helps prevent very small classes from dominating the loss.
+```bash
+python -m src.train_v4
+```
 
 ---
 
-# 🖼️ Image Pipeline
+# 8. Data Augmentation
 
-### Training
+Training preprocessing:
 
 ```text
 Input image
    ↓
-RandomResizedCrop(224)
+RandomResizedCrop(224, scale=0.8–1.0)
    ↓
 RandomHorizontalFlip
    ↓
@@ -320,75 +341,39 @@ ToTensor
 ImageNet normalization
 ```
 
-### Validation / inference
+Validation and inference preprocessing:
 
 ```text
 Input image
    ↓
-Resize → 224 × 224
+Resize 224 × 224
    ↓
 ToTensor
    ↓
 ImageNet normalization
-   ↓
-ResNet50
 ```
 
-Using the same deterministic normalization assumptions between evaluation and inference reduces training/serving preprocessing mismatch.
+ImageNet normalization:
+
+```text
+Mean = [0.485, 0.456, 0.406]
+Std  = [0.229, 0.224, 0.225]
+```
 
 ---
 
-# 🧪 Dataset
+# 9. Dataset
 
-The training and evaluation data follow the PyTorch `ImageFolder` convention:
+The project uses the PyTorch `ImageFolder` format.
 
 ```text
 data/
 ├── train/
-│   ├── class_01/
-│   ├── class_02/
-│   └── ...
 ├── val/
-│   ├── class_01/
-│   ├── class_02/
-│   └── ...
 └── test/
-    ├── class_01/
-    ├── class_02/
-    └── ...
 ```
 
-Dataset validation is implemented in:
-
-```text
-src/dataset_prep.py
-```
-
-The pipeline checks important dataset assumptions such as:
-
-- required splits
-- class-folder consistency
-- supported image extensions
-- image counts
-- empty classes
-- train/validation class mismatches
-- reproducible class-index mapping
-
-Run:
-
-```bash
-python -m src.dataset_prep
-```
-
----
-
-# 📈 Evaluation
-
-## Current Experiment Snapshot
-
-The latest verified **V3 experiment** used the repository's **20-epoch training schedule** (5 + 15).
-
-### Dataset snapshot
+Dataset sizes:
 
 | Split | Images | Classes represented |
 |---|---:|---:|
@@ -396,623 +381,511 @@ The latest verified **V3 experiment** used the repository's **20-epoch training 
 | Validation | **299** | 24 |
 | Test | **192** | 23 of 24 |
 
-The test split is missing the `naugedi` class. The evaluation script detects this condition and remaps the remaining test labels back to the original 24-class model indices so that class-index shifting does not corrupt the evaluation.
+The test split does not contain `naugedi`.
 
-| Phase | Epochs | Purpose |
-|---|---:|---|
-| Phase 1 | **5** | Train the custom classification head with the ResNet50 backbone frozen |
-| Phase 2 | **15** | Fine-tune ResNet50 `layer4` together with the classification head |
-| **Total** | **20** | Complete training schedule |
+The dataset preparation code validates:
 
-The V3 best checkpoint was recorded at **Phase 2, epoch 7** — the **12th epoch overall** (5 Phase-1 epochs + 7 Phase-2 epochs).
-
-Evaluation is implemented in:
-
-```text
-src/evaluate.py
-```
-
-Run:
-
-```bash
-python -m src.evaluate
-```
-
-The evaluation pipeline generates:
-
-```text
-evaluation/
-├── metrics.json
-└── confusion_matrix.png
-```
-
-It reports:
-
-- Accuracy
-- Macro F1
-- Weighted F1
-- Per-class precision
-- Per-class recall
-- Per-class F1
-- Confusion matrix
-- Best validation metrics stored in the checkpoint
-
-### Important test-set note
-
-The current test split does not contain examples for every one of the 24 model classes. The evaluation code explicitly detects missing test classes and remaps the remaining ImageFolder labels back to the original 24-class model indices.
-
-This prevents a subtle class-index shift from producing incorrect evaluation results.
-
-Because some classes have no ground-truth test samples, their per-class metrics cannot be interpreted as a real measure of test performance.
-
-### V3 final evaluation
-
-The **V3 production experiment** is the current benchmark for this repository.
-
-| Metric | V3 result |
-|---|---:|
-| Validation accuracy | **84.62%** |
-| Validation Macro F1 | **61.44%** |
-| Test accuracy | **82.29%** |
-| Test Macro F1 | **70.90%** |
-| Test Weighted F1 | **82.73%** |
-| Best checkpoint | **Phase 2, epoch 7** |
-
-V3 is the result to use when describing the current model in a portfolio, interview, or deployment discussion. Older experiment results should not be presented as the current benchmark.
-
-> **Evaluation caveat:** the test split contains 192 images across 23 of the 24 model classes; `naugedi` has no test examples. Therefore, the overall test metrics are valid for the available test samples, but the absent class cannot be evaluated from this split.
-
----
-
-## 🧾 Current V3 Experiment Record
-
-| Item | Verified value |
-|---|---|
-| Experiment | **V3** |
-| Model | ResNet50 transfer learning |
-| Classes | **24** |
-| Train images | **1,586** |
-| Validation images | **299** |
-| Test images | **192** |
-| Test classes represented | **23 / 24** |
-| Missing test class | **naugedi** |
-| Phase 1 | **5 epochs** |
-| Phase 2 | **15 epochs** |
-| Total schedule | **20 epochs** |
-| Best checkpoint | **Phase 2, epoch 7** |
-| Validation accuracy | **84.62%** |
-| Validation Macro F1 | **61.44%** |
-| Test accuracy | **82.29%** |
-| Test Macro F1 | **70.90%** |
-| Test Weighted F1 | **82.73%** |
-| Production artifact path | models/resnet50/best_resnet50.pth in S3 |
-
-This V3 record supersedes the older benchmark numbers previously documented in this README.
-
-
----
-
-# 🧪 Hybrid V1 Experiment
-
-Hybrid V1 is a distinct experiment from both V3 and V4. It keeps only the early/mid feature extraction path of pretrained ResNet50 and replaces the later ResNet blocks with a custom CNN and classifier.
-
-```text
-Input 224 × 224
-       │
-       ▼
-Pretrained ResNet50
-       │
-       ├── Conv1
-       ├── BatchNorm
-       ├── ReLU
-       ├── MaxPool
-       ├── Layer1
-       └── Layer2
-              │
-              ▼
-       Feature map: 512 channels
-              │
-              ▼
-       Conv2D 512 → 256
-              │
-              ▼
-       BatchNorm + ReLU
-              │
-              ▼
-       Conv2D 256 → 128
-              │
-              ▼
-       BatchNorm + ReLU
-              │
-              ▼
-       Adaptive Average Pooling
-              │
-              ▼
-       Linear 128 → 128
-              │
-              ▼
-       ReLU + Dropout(0.4)
-              │
-              ▼
-       Linear 128 → 24
-```
+- required dataset splits
+- class-folder consistency
+- supported image extensions
+- train/validation class mapping
+- image counts
+- empty classes
+- class consistency
 
 Implementation:
 
 ```text
-src/hybrid_model.py
-src/train_hybrid.py
-src/evaluate_hybrid.py
+src/dataset_prep.py
 ```
 
-## Hybrid V1 Training Configuration
+---
 
-The current source code defines:
+# 10. Supported Classes
 
-| Component | Configuration |
-|---|---|
-| Backbone | ImageNet-pretrained ResNet50 |
-| Selected backbone | Conv1 → Layer1 → Layer2 |
-| Layer3 / Layer4 | Not used |
-| Custom CNN | 512 → 256 → 128 |
-| Classifier | 128 → 128 → 24 |
-| Dropout | 0.4 |
-| Input | 224 × 224 |
-| Batch size | 8 |
-| Epochs | **15** |
-| Learning rate | 1e-3 |
-| Weight decay | 1e-4 |
-| Optimizer | AdamW |
-| Loss | Inverse-square-root weighted Cross Entropy |
-| Seed | 42 |
-| Model selection | Best validation Macro F1 |
-| Device | CUDA when available, otherwise CPU |
+The V4 model predicts 24 classes:
 
-So the **15 epochs here are intentional and belong to Hybrid V1**. They are not the V3 Phase-2 value.
+1. Ali Band
+2. Bijaith
+3. Chura
+4. Haku Tapli
+5. Hansuli
+6. Hāku patāsi
+7. Mangiya
+8. Nyapu Shikha
+9. Sirbandi
+10. Tapalan
+11. cholo
+12. chyapte_sun
+13. dhungri
+14. dori
+15. gunyo
+16. kanthula
+17. naugedi
+18. patuki
+19. potey
+20. sirful
+21. teekma
+22. tharu_broad_wrist_band
+23. tharu_head_cloth
+24. tharu_waist_chain
+
+---
+
+# 11. Class Imbalance
+
+V4 uses inverse-square-root class weighting:
+
+```text
+weight(class) = 1 / sqrt(class_count)
+```
+
+The weights are normalized so their mean is approximately 1.
+
+This provides a softer correction than direct inverse-frequency weighting and reduces the risk of very rare classes dominating the training loss.
+
+---
+
+# 12. Model Selection
+
+The best V4 checkpoint is selected using **validation Macro F1**, not validation accuracy alone.
+
+Why Macro F1?
+
+Because this is a multi-class problem with class imbalance. Macro F1 gives every class equal importance.
+
+The selected checkpoint is:
+
+```text
+Overall Epoch : 8 / 10
+Phase         : Phase 2
+Phase Epoch   : 3
+Val Accuracy  : 87.63%
+Val Macro F1  : 63.10%
+```
+
+Checkpoint:
+
+```text
+models/resnet50_custom_v4/best_resnet50_custom_v4.pth
+```
+
+---
+
+# 13. V4 Evaluation Results
+
+## Validation
+
+| Metric | Result |
+|---|---:|
+| Accuracy | **87.63%** |
+| Macro F1 | **63.10%** |
+
+## Test
+
+| Metric | Result |
+|---|---:|
+| Accuracy | **75.00%** |
+| Macro F1 | **64.01%** |
+| Weighted F1 | **73.45%** |
+| Test images | **192** |
+| Classes represented | **23 / 24** |
+
+Evaluation implementation:
+
+```text
+src/evaluate_v4.py
+```
 
 Run:
 
 ```bash
-python -m src.train_hybrid
+python -m src.evaluate_v4
 ```
 
-Evaluate:
+---
 
-```bash
-python -m src.evaluate_hybrid
-```
+# 14. Test-Set Caveat
 
-### Hybrid V1 result status
+The test set contains examples from **23 of the 24 classes**.
 
-The repository currently contains the complete Hybrid V1 architecture, training pipeline, checkpoint-writing logic, and evaluation pipeline, but a verified Hybrid V1 test benchmark is not currently documented.
-
-That is deliberate: **no accuracy or F1 number is claimed until the actual best_hybrid_v1.pth checkpoint has been evaluated.**
-
-Record after evaluation:
+The missing class is:
 
 ```text
-Test accuracy
-Test Macro F1
-Test Weighted F1
-Best validation accuracy
-Best validation Macro F1
-Best epoch
-Confusion matrix
-Per-class report
+naugedi
 ```
 
-## Why Hybrid V1 matters
+Therefore:
+
+- the reported overall metrics describe the available 192 test images
+- `naugedi` cannot be evaluated from the current test split
+- per-class metrics for absent classes should not be interpreted as measured test performance
+
+This limitation is intentionally documented rather than hidden.
+
+---
+
+# 15. Strong and Difficult Classes
+
+The current V4 evaluation shows strong performance on several classes, including:
+
+| Class | F1 |
+|---|---:|
+| Haku Tapli | **1.00** |
+| Nyapu Shikha | **1.00** |
+| tharu_broad_wrist_band | **0.97** |
+| Hansuli | **0.96** |
+| Hāku patāsi | **0.92** |
+| Mangiya | **0.91** |
+| Tapalan | **0.88** |
+
+More challenging classes include:
+
+- `chyapte_sun`
+- `dhungri`
+- `patuki`
+- `dori`
+- `potey`
+
+Performance can vary with image quality, pose, background, occlusion, and visual similarity between cultural items.
+
+---
+
+# 16. V3 Benchmark
+
+V3 is retained as a **previous benchmark**, not as the deployed model.
+
+| Metric | V3 |
+|---|---:|
+| Test Accuracy | **82.29%** |
+| Test Macro F1 | **70.90%** |
+| Test Weighted F1 | **82.73%** |
+
+V4 has lower test metrics than V3, but V4 was selected for the current workflow because it implements the mentor-directed architecture with custom convolutional and linear layers.
+
+This distinction is important:
 
 ```text
 V3
-Full ResNet50 representation + custom classifier
-        ↓
-Strong production baseline
-
-Hybrid V1
-Early/mid ResNet50 features only + custom CNN
-        ↓
-Reduced-backbone experiment
+↓
+Previous benchmark
 
 V4
-Full ResNet50 representation + custom Conv2D + Linear head
-        ↓
-Custom-head experiment
+↓
+Current model + deployment architecture
 ```
-
-The production decision should be based on the same held-out test split and the same metrics across all experiments.
-
-# 🧪 V4 Custom ResNet50 Experiment
-
-V4 was developed as an **experimental architecture** following the mentor-guided design requirement: keep ResNet50 as the pretrained feature extractor, then add custom convolutional and linear layers before the final 24-class classifier.
-
-> **Production status:** V4 is **not** the production benchmark. V3 remains the production model because V3 achieves higher test performance. V4 is retained as a reproducible architecture experiment and demonstrates custom neural-network layers on top of a pretrained ResNet50 backbone.
-
-## V4 Architecture
-
-~~~text
-Input
-224 × 224 × 3
-        │
-        ▼
-Pretrained ResNet50 Backbone
-        │
-        ▼
-Feature Map
-2048 × 7 × 7
-        │
-        ▼
-Custom Conv2D #1
-2048 → 512
-Kernel: 3 × 3
-Padding: 1
-        │
-        ▼
-ReLU
-        │
-        ▼
-Custom Conv2D #2
-512 → 256
-Kernel: 3 × 3
-Padding: 1
-        │
-        ▼
-ReLU
-        │
-        ▼
-Global Average Pooling
-        │
-        ▼
-256
-        │
-        ▼
-Custom Linear #1
-256 → 128
-        │
-        ▼
-ReLU
-        │
-        ▼
-Dropout(0.2)
-        │
-        ▼
-Custom Linear #2
-128 → 24
-        │
-        ▼
-24-class output
-~~~
-
-Implementation:
-
-~~~text
-src/v4_model.py
-~~~
-
-The V4 model is intentionally different from the production V3 classification head. It uses the ResNet50 convolutional feature extractor and adds **two custom Conv2D layers, global average pooling, and two custom Linear layers**.
-
-## V4 Training Strategy
-
-### Phase 1 — Train custom layers
-
-~~~text
-ResNet50 backbone      → Frozen
-Custom Conv2D layers   → Trainable
-Custom Linear layers   → Trainable
-
-Epochs                 → 5
-Learning rate          → 1e-3
-~~~
-
-### Phase 2 — Fine-tune layer4
-
-~~~text
-ResNet50 layers 1–3   → Frozen
-ResNet50 layer4       → Trainable
-Custom head           → Trainable
-
-Epochs                → 5
-Layer4 learning rate  → 1e-5
-Custom head LR        → 1e-3
-~~~
-
-Additional configuration:
-
-| Component | V4 configuration |
-|---|---|
-| Backbone | Pretrained ResNet50 |
-| Input size | 224 × 224 |
-| Classes | 24 |
-| Batch size | 8 |
-| Phase 1 | 5 epochs |
-| Phase 2 | 5 epochs |
-| Total epochs | **10** |
-| Optimizer | AdamW |
-| Weight decay | 1e-4 |
-| Loss | Inverse-square-root weighted Cross Entropy |
-| Dropout | 0.2 |
-| Selection metric | Validation Macro F1 |
-| Training device | CPU |
-
-Training implementation:
-
-~~~text
-src/train_v4.py
-~~~
-
-Run:
-
-~~~bash
-python -m src.train_v4
-~~~
-
-Before training, the architecture can be validated with:
-
-~~~bash
-python -m src.test_v4_model
-~~~
-
-## V4 Evaluation
-
-The V4 checkpoint is evaluated independently from the production V3 checkpoint.
-
-~~~text
-src/evaluate_v4.py
-~~~
-
-Run:
-
-~~~bash
-python -m src.evaluate_v4
-~~~
-
-The evaluator correctly handles the current test-set structure:
-
-~~~text
-Model classes       → 24
-Test classes        → 23
-Missing test class  → naugedi
-Test images         → 192
-~~~
-
-The test labels are explicitly remapped from the test ImageFolder indices back to the original 24-class model indices. This prevents the missing naugedi class from shifting the remaining class indices.
-
-### Verified V4 Results
-
-| Metric | V4 result |
-|---|---:|
-| Test images | **192** |
-| Model classes | **24** |
-| Test classes represented | **23 / 24** |
-| Missing test class | **naugedi** |
-| Test accuracy | **75.00%** |
-| Test Macro F1 | **64.01%** |
-| Test Weighted F1 | **73.45%** |
-| Best validation Macro F1 | **63.10%** |
-| Best checkpoint | **Phase 2, epoch 3** |
-| Checkpoint | models/resnet50_custom_v4/best_resnet50_custom_v4.pth |
-
-V4's best checkpoint was selected by **validation Macro F1**, not by validation accuracy. The highest validation accuracy occurred later, but the checkpoint-selection rule remained Macro F1 to give equal importance to the classes.
-
-### V3 vs V4
-
-| Model | Architecture | Test Accuracy | Test Macro F1 | Test Weighted F1 | Status |
-|---|---|---:|---:|---:|---|
-| **V3** | ResNet50 + custom classification head | **82.29%** | **70.90%** | **82.73%** | **Production benchmark** |
-| **V4** | ResNet50 + custom Conv2D + Linear layers | 75.00% | 64.01% | 73.45% | Experimental |
-
-Therefore, the repository does **not** claim that V4 improves the model's benchmark performance. V4 demonstrates the requested custom architecture while V3 remains the stronger evaluated model.
-
-## V4 Artifacts
-
-~~~text
-models/
-└── resnet50_custom_v4/
-    ├── best_resnet50_custom_v4.pth
-    ├── training_history_v4.json
-    └── test_results_v4.json
-~~~
 
 ---
 
-# 📦 Model Artifact
+# 17. V4 vs V3
 
-Training produces:
-
-```text
-models/
-└── best_resnet50.pth
-```
-
-The checkpoint stores more than the raw weights. The serving layer uses these fields to reconstruct the model and class mapping:
-
-```text
-artifact_version
-model_name
-state_dict
-class_names
-num_classes
-image_size
-mean
-std
-epoch
-val_accuracy
-val_macro_f1
-phase
-```
-
-This makes the model artifact **self-describing** and allows the serving layer to reconstruct the correct architecture, preprocessing assumptions, and class mapping.
-
-The production API creates the architecture with:
-
-```python
-NepaliDressClassifier(
-    num_classes=num_classes,
-    pretrained=False,
-)
-```
-
-The `pretrained=False` setting is important in deployment: the API loads the trained checkpoint instead of downloading ImageNet weights again.
-
----
-
-# ☁️ AWS S3 Model Storage
-
-The model artifact is separated from the application container.
-
-```text
-Amazon S3
-    │
-    │ startup download
-    ▼
-FastAPI container
-    │
-    ▼
-ResNet50
-```
-
-Default configuration:
-
-```text
-S3_MODEL_KEY=models/resnet50/best_resnet50.pth
-AWS_REGION=ap-southeast-2
-```
-
-The bucket is configurable with:
-
-```bash
-S3_BUCKET=your-bucket
-S3_MODEL_KEY=models/resnet50/best_resnet50.pth
-AWS_REGION=ap-southeast-2
-```
-
-The application uses boto3's AWS credential chain. On EC2, the recommended approach is an **IAM instance role** with least-privilege access to the required S3 object.
-
----
-
-# 🚀 FastAPI Inference API
-
-The API lives in:
-
-```text
-api/
-├── main.py
-├── predictor.py
-└── schemas.py
-```
-
-## Endpoints
-
-| Method | Endpoint | Purpose |
+| Area | V3 | V4 |
 |---|---|---|
-| GET | `/` | API information and available routes |
-| GET | `/health` | Service and model health |
-| GET | `/model-info` | Architecture, class count, classes, device, checkpoint metadata |
-| POST | `/predict` | Classify an uploaded image |
+| Backbone | ResNet50 | ResNet50 |
+| Custom Conv2D | No | **Yes** |
+| Custom Linear head | Yes | **Yes** |
+| Training | 5 + 15 epochs | **5 + 5 epochs** |
+| Test Accuracy | 82.29% | **75.00%** |
+| Test Macro F1 | 70.90% | **64.01%** |
+| Current deployment | Previous benchmark | **Current** |
 
-Interactive documentation:
+A newer architecture is not automatically more accurate. The project keeps the benchmark history visible while using V4 as the current engineering/deployment implementation.
+
+---
+
+# 18. Production Inference Architecture
 
 ```text
-http://127.0.0.1:8000/docs
-http://127.0.0.1:8000/redoc
+                    User / Client
+                         │
+                         ▼
+                    FastAPI API
+                         │
+                         ▼
+                  PredictorService
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+              ▼                     ▼
+       Image validation       Image preprocessing
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+                ResNet50 Custom V4
+                         │
+                         ▼
+                 24 class logits
+                         │
+                         ▼
+                    Softmax
+                         │
+                         ▼
+                 Top-3 predictions
+                         │
+                         ▼
+              Confidence check 0.60
+                         │
+                         ▼
+                    API response
 ```
 
 ---
 
-# 🔍 Prediction Pipeline
+# 19. Cloud Deployment Architecture
 
 ```text
-JPEG / PNG / WEBP
-        │
-        ▼
-Content-type validation
-        │
-        ▼
-5 MB size validation
-        │
-        ▼
-PIL image validation
-        │
-        ▼
-RGB conversion
-        │
-        ▼
-224 × 224 resize
-        │
-        ▼
-ImageNet normalization
-        │
-        ▼
-ResNet50 inference
-        │
-        ▼
-Softmax probabilities
-        │
-        ▼
-Top-3 ranking
-        │
-        ▼
-0.60 confidence threshold
-        │
-        ├── confidence ≥ 0.60 → success
-        │
-        └── confidence < 0.60 → uncertain
+                         AWS
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+              ▼                       ▼
+        Amazon S3                 Amazon EC2
+        Model Artifact                 │
+              │                        ▼
+              │                   Docker
+              │                        │
+              └───────────────────────►│
+                                       ▼
+                                   FastAPI
+                                       │
+                                       ▼
+                              ResNet50 Custom V4
+                                       │
+                                       ▼
+                                  Port 9000
 ```
 
-The API accepts:
+Current model artifact:
+
+```text
+S3 bucket:
+nepali-cultural-dress-ai-696822062401-ap-southeast-2-an
+
+S3 key:
+models/resnet50_custom_v4/best_resnet50_custom_v4.pth
+```
+
+---
+
+# 20. Complete End-to-End Workflow
+
+```text
+Dataset
+   ↓
+Dataset Preparation
+   ↓
+Train / Validation / Test Split
+   ↓
+Image Preprocessing
+   ↓
+Pretrained ResNet50 Backbone
+   ↓
+2048 × 7 × 7 Feature Map
+   ↓
+Custom Conv2D
+2048 → 512
+   ↓
+Custom Conv2D
+512 → 256
+   ↓
+Global Average Pooling
+   ↓
+Custom Linear
+256 → 128
+   ↓
+Dropout 0.2
+   ↓
+Custom Linear
+128 → 24
+   ↓
+Phase 1 Training
+   ↓
+Phase 2 Fine-Tuning
+   ↓
+Validation
+   ↓
+Best Checkpoint by Macro F1
+   ↓
+V4 Checkpoint
+   ↓
+Amazon S3
+   ↓
+AWS EC2
+   ↓
+Docker
+   ↓
+FastAPI
+   ↓
+User Uploads Image
+   ↓
+Validation + Preprocessing
+   ↓
+V4 Inference
+   ↓
+Top-3 Predictions
+   ↓
+Confidence / Uncertainty Check
+   ↓
+API Response
+```
+
+---
+
+# 21. FastAPI
+
+The API is implemented using FastAPI.
+
+Application:
+
+```text
+api/main.py
+```
+
+Inference service:
+
+```text
+api/predictor.py
+```
+
+Schemas:
+
+```text
+api/schemas.py
+```
+
+### Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | API information |
+| `/health` | GET | Service and model health |
+| `/model-info` | GET | Model metadata |
+| `/predict` | POST | Image classification |
+| `/docs` | GET | Swagger UI |
+| `/openapi.json` | GET | OpenAPI schema |
+
+---
+
+# 22. Prediction API
+
+The prediction endpoint accepts:
 
 - JPEG
 - PNG
 - WEBP
 
-The application enforces a **5 MB maximum image size** and also validates that the uploaded bytes are a real readable image rather than relying only on the MIME type.
+The service:
+
+1. validates the MIME type
+2. reads the uploaded file
+3. checks that the file is not empty
+4. enforces a 5 MB image limit
+5. decodes the image with Pillow
+6. converts it to RGB
+7. resizes it to 224 × 224
+8. applies ImageNet normalization
+9. runs V4 inference
+10. returns the top-3 predictions
+11. applies the confidence threshold
 
 ---
 
-# 📋 Example Response
+# 23. Confidence / Uncertainty
+
+The service uses:
+
+```text
+Confidence threshold = 0.60
+```
+
+If the highest predicted confidence is below 0.60:
+
+```text
+status = "uncertain"
+```
+
+If it is at or above 0.60:
+
+```text
+status = "success"
+```
+
+This is a **confidence-based uncertainty indicator**.
+
+It is **not a formal or calibrated Out-of-Distribution detector** and should not be interpreted as proof that an image belongs outside the training distribution.
+
+---
+
+# 24. API Response Concept
+
+A successful prediction returns information such as:
 
 ```json
 {
-  "filename": "nepali-dress.jpg",
+  "filename": "sample.jpg",
   "status": "success",
-  "top_prediction": "example_class",
+  "top_prediction": "Hansuli",
   "confidence": 94.21,
   "top_k": [
     {
-      "class_name": "example_class",
+      "class_name": "Hansuli",
       "confidence": 94.21
     },
     {
-      "class_name": "another_class",
-      "confidence": 3.71
+      "class_name": "Mangiya",
+      "confidence": 3.42
     },
     {
-      "class_name": "third_class",
-      "confidence": 1.02
+      "class_name": "Chura",
+      "confidence": 1.13
     }
   ],
   "is_out_of_distribution": false
 }
 ```
 
-### Uncertain prediction
-
-When the highest softmax confidence is below `0.60`:
-
-```json
-{
-  "status": "uncertain",
-  "is_out_of_distribution": true
-}
-```
-
-> **Important:** this is a confidence-based uncertainty flag, not a formally calibrated or guaranteed OOD detector. Softmax confidence should not be interpreted as a statistically calibrated probability of correctness.
+The field name `is_out_of_distribution` is retained for API compatibility, but the decision is currently based on the **0.60 confidence threshold**, not a formal OOD model.
 
 ---
 
-# 🐳 Docker
+# 25. Model Metadata API
 
-The inference service is containerized for repeatable deployment.
+`/model-info` exposes the deployed model metadata, including:
+
+- architecture
+- number of classes
+- supported classes
+- inference device
+- confidence threshold
+- artifact version
+- checkpoint epoch
+- validation accuracy
+- validation Macro F1
+
+The expected V4 metadata is:
+
+```text
+architecture:
+ResNet50 Custom V4
+
+artifact_version:
+4.0
+
+epoch:
+3  (Phase 2 epoch; overall Epoch 8)
+
+val_accuracy:
+0.8762541806020067
+
+val_macro_f1:
+0.6310008087372548
+```
+
+---
+
+# 26. Docker
+
+The inference service is containerized with Docker.
 
 Build:
 
@@ -1020,78 +893,79 @@ Build:
 docker build -t nepali-dress-api .
 ```
 
-Run:
-
-```bash
-docker run -d \
-  --name nepali_dress_api \
-  -p 9000:8000 \
-  -e AWS_REGION=ap-southeast-2 \
-  -e S3_BUCKET=your-bucket \
-  -e S3_MODEL_KEY=models/resnet50/best_resnet50.pth \
-  nepali-dress-api
-```
-
-Or:
+Run with Compose:
 
 ```bash
 docker compose up --build
 ```
 
-The local container mapping used by the deployment configuration is:
+Port mapping:
 
 ```text
-Host     : 9000
+Host:      9000
 Container: 8000
 ```
 
+The container obtains the V4 model from Amazon S3 at startup.
+
 ---
 
-# ☁️ Amazon EC2 Deployment
+# 27. AWS EC2 Deployment
 
-The deployment configuration runs the Dockerized FastAPI service on **Amazon EC2**.
+The deployed service runs on Amazon EC2 using Ubuntu and Docker.
 
-High-level architecture:
+Deployment environment:
+
+| Component | Value |
+|---|---|
+| Cloud | AWS |
+| Compute | EC2 |
+| Region | ap-southeast-2 |
+| Container | Docker |
+| API | FastAPI |
+| Model storage | Amazon S3 |
+| Inference | CPU |
+| Host port | 9000 |
+| Container port | 8000 |
+| Model | ResNet50 Custom V4 |
+
+The API downloads the V4 checkpoint from S3 during application startup.
+
+If the model cannot be loaded, the service does not report a healthy model-loaded state.
+
+---
+
+# 28. CI/CD Deployment
+
+GitHub Actions is configured to deploy the application to EC2 when changes are pushed to `main`.
+
+The deployment process:
 
 ```text
-                    GitHub
-                      │
-                      │ push
-                      ▼
-              GitHub Actions
-                      │
-                      │ SSH
-                      ▼
-                 Amazon EC2
-                      │
-                      ▼
-               Docker Container
-                      │
-             ┌────────┴────────┐
-             │                 │
-             ▼                 ▼
-          FastAPI           Amazon S3
-             │              Model Artifact
-             ▼
-          ResNet50
+Git push
+   ↓
+GitHub Actions
+   ↓
+SSH to EC2
+   ↓
+Clone latest main
+   ↓
+Verify V4 deployment files
+   ↓
+Build Docker image
+   ↓
+Start container
+   ↓
+Wait for /health
+   ↓
+Verify model_loaded=true
+   ↓
+Verify /model-info
+   ↓
+Final health verification
+   ↓
+Deployment successful
 ```
-
-The deployment workflow:
-
-1. Checks out the workflow repository on the GitHub Actions runner
-2. Connects to EC2 using SSH
-3. Removes the previous application container
-4. Clones the latest `main` branch on EC2
-5. Verifies required files
-6. Verifies deployment model configuration
-7. Builds the Docker image
-8. Starts the container
-9. Waits for the API to become ready
-10. Requires `model_loaded=true`
-11. Queries `/model-info`
-12. Performs a final health verification
-13. Cleans unused Docker images
-14. Fails the deployment if health verification fails
 
 Workflow:
 
@@ -1099,72 +973,108 @@ Workflow:
 .github/workflows/deploy.yml
 ```
 
+The deployment is **health-gated**: a successful Docker build alone is not considered a successful deployment.
+
 ---
 
-# 🔄 CI/CD
+# 29. AWS Credentials
 
-A push to `main` can trigger the EC2 deployment workflow.
+The application uses the standard boto3 credential chain.
 
-The deployment is deliberately **health-gated**.
+For EC2, an IAM instance role is preferred over hard-coded credentials.
 
-A successful Docker build alone is not considered a successful deployment.
+The application does not store AWS credentials in Python source code.
 
-The workflow verifies:
+Required runtime configuration includes:
 
 ```text
-Docker build
-     ↓
-Container running
-     ↓
-/health responds
-     ↓
-model_loaded = true
-     ↓
-/model-info responds
-     ↓
-Final health check
-     ↓
-DEPLOYMENT SUCCESSFUL
+AWS_REGION
+AWS_DEFAULT_REGION
+S3_BUCKET
+S3_MODEL_KEY
 ```
 
-If the model cannot be downloaded from S3 or cannot be loaded into ResNet50, the deployment fails instead of silently publishing an unhealthy API.
+Current production model key:
+
+```text
+models/resnet50_custom_v4/best_resnet50_custom_v4.pth
+```
 
 ---
 
-# 🔐 Security & Production Practices
+# 30. Security and Reliability
 
-The repository follows practical production engineering principles:
+Current engineering practices include:
 
-- AWS access keys are not embedded in Python source code
-- EC2 can use an IAM instance role
-- S3 model storage is separated from application code
-- Docker runs the API as a non-root user
-- Uploaded images are size-limited
-- MIME types are validated
-- Image bytes are actually decoded before inference
-- A model-loading failure prevents the application from completing startup
-- Runtime configuration is supplied through environment variables
-- CI/CD secrets are expected to remain in GitHub Secrets
-- S3 access should follow least privilege
+- no AWS credentials hard-coded in source
+- S3 model storage separated from application code
+- runtime environment variables for deployment configuration
+- image MIME-type validation
+- image decoding validation
+- 5 MB upload limit
+- model-loaded health verification
+- Dockerized runtime
+- EC2 IAM credential-chain compatibility
+- non-root container runtime
+- health-gated deployment
 
-### Recommended IAM design
-
-The EC2 role should have only the S3 permissions required to read the model artifact.
-
-Avoid attaching broad administrator permissions to the application instance.
+For production hardening, least-privilege IAM permissions should be used for the EC2 role.
 
 ---
 
-# 🧪 Local Setup
+# 31. Repository Structure
 
-## 1. Clone the repository
+```text
+nepali-cultural-dress-recognition/
+│
+├── .github/
+│   └── workflows/
+│       └── deploy.yml
+│
+├── api/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── predictor.py
+│   └── schemas.py
+│
+├── src/
+│   ├── __init__.py
+│   ├── dataset_prep.py
+│   ├── evaluate.py
+│   ├── evaluate_v4.py
+│   ├── test_v4_model.py
+│   ├── train_v4.py
+│   ├── v4_model.py
+│   ├── model.py
+│   ├── train.py
+│   ├── hybrid_model.py
+│   ├── train_hybrid.py
+│   ├── evaluate_hybrid.py
+│   └── utils.py
+│
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── requirements-docker.txt
+├── .dockerignore
+├── .gitignore
+└── README.md
+```
+
+V3 and Hybrid V1 source files remain in the repository as experiment history; **they are not used by the current V4 deployment path**.
+
+---
+
+# 32. Local Setup
+
+Clone:
 
 ```bash
 git clone https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition.git
 cd nepali-cultural-dress-recognition
 ```
 
-## 2. Create a virtual environment
+Create environment:
 
 ### Windows PowerShell
 
@@ -1180,51 +1090,43 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-## 3. Install dependencies
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-For the CPU-oriented Docker runtime:
-
-```bash
-pip install -r requirements-docker.txt
-```
-
-## 4. Validate the dataset
+Validate dataset:
 
 ```bash
 python -m src.dataset_prep
 ```
 
-## 5. Train
+Train V4:
 
 ```bash
-python -m src.train
+python -m src.train_v4
 ```
 
-## 6. Evaluate
+Evaluate V4:
 
 ```bash
-python -m src.evaluate
+python -m src.evaluate_v4
 ```
 
-## 7. Start the API
+Run architecture tests:
 
-Configure AWS access and model location:
+```bash
+python -m src.test_v4_model
+```
 
-### Windows PowerShell
+Start API:
 
-```powershell
-$env:AWS_REGION="ap-southeast-2"
-$env:S3_BUCKET="your-bucket"
-$env:S3_MODEL_KEY="models/resnet50/best_resnet50.pth"
-
+```bash
 uvicorn api.main:app --reload
 ```
 
-Then open:
+Swagger:
 
 ```text
 http://127.0.0.1:8000/docs
@@ -1232,264 +1134,169 @@ http://127.0.0.1:8000/docs
 
 ---
 
-# 🧪 Experiment History
+# 33. Experiment History
 
-The repository contains three distinct model lines. Keeping them separate makes the project easier to explain to a mentor or interviewer.
+The project evolved through multiple architecture experiments.
 
 ```text
 V3
 │
-├── Production baseline
-├── ResNet50 full backbone
-├── 5 + 15 epochs
-└── Verified benchmark: 82.29% test accuracy
-
+├── Previous ResNet50 benchmark
+├── Test Accuracy: 82.29%
+└── Test Macro F1: 70.90%
+        │
+        ▼
 Hybrid V1
 │
-├── Research experiment
-├── ResNet50 Conv1–Layer2 only
-├── 15 epochs
-└── Benchmark pending checkpoint evaluation
-
+├── Reduced ResNet50 feature extractor
+├── Custom CNN
+└── Separate research experiment
+        │
+        ▼
 V4
 │
-├── Research experiment
 ├── Full ResNet50 feature extractor
-├── Custom Conv2D + Linear head
-├── 5 + 5 epochs
-└── Verified benchmark: 75.00% test accuracy
+├── Custom Conv2D layers
+├── Custom Linear layers
+├── 10 total epochs
+└── Current deployment model
 ```
 
-### Development timeline
-
-| Stage | Repository work |
-|---|---|
-| V3 | Established the production ResNet50 transfer-learning baseline |
-| Hybrid V1 | Added a reduced-backbone hybrid architecture and independent evaluation pipeline |
-| V4 | Added a custom convolutional classification pipeline and architecture tests |
-| Deployment | Added Docker + S3 + EC2 + GitHub Actions health-gated deployment |
-| Documentation | Consolidated experiments, deployment, evaluation assumptions, and limitations |
-
-**A new architecture is not automatically a better model.** The repository records architecture, training configuration, and measured result separately so the production decision is evidence-based.
-
-# 📁 Repository Structure
-
-```text
-nepali-cultural-dress-recognition/
-│
-├── .github/
-│   └── workflows/
-│       └── deploy.yml              # EC2 deployment automation
-│
-├── api/
-│   ├── __init__.py
-│   ├── main.py                     # FastAPI application
-│   ├── predictor.py                # S3 + model + inference service
-│   └── schemas.py                  # Pydantic response schemas
-│
-├── src/
-│   ├── __init__.py
-│   ├── dataset_prep.py             # Dataset validation and class checks
-│   ├── evaluate.py                 # Test evaluation + artifacts
-│   ├── evaluate_hybrid.py          # Hybrid V1 test evaluation
-│   ├── evaluate_v4.py              # V4 test evaluation
-│   ├── test_v4_model.py            # V4 architecture tests
-│   ├── train_v4.py                 # V4 two-stage training
-│   ├── v4_model.py                 # V4 custom ResNet50 architecture
-│   ├── hybrid_model.py             # Hybrid V1 architecture
-│   ├── model.py                    # ResNet50 architecture
-│   ├── train.py                    # V3 two-phase training
-│   ├── train_hybrid.py             # Hybrid V1 training
-│   └── utils.py                    # Reserved utility module
-│
-├── Dockerfile                      # Production container
-├── docker-compose.yml              # Local container orchestration
-├── requirements.txt                # Development/training dependencies
-├── requirements-docker.txt         # CPU deployment dependencies
-├── .dockerignore
-├── .gitignore
-└── README.md
-```
+The project intentionally keeps historical experiments separate from the current production path.
 
 ---
 
-# 🧠 Engineering Decisions
+# 34. Limitations and Future Work
 
-### Why ResNet50?
+### Current limitations
 
-ResNet50 provides a strong ImageNet pretrained representation and is a practical foundation for transfer learning on a relatively specialized visual dataset.
-
-### Why two-stage fine-tuning?
-
-Training the head first stabilizes the new classification layer. Unfreezing `layer4` afterward allows domain adaptation without aggressively changing the entire pretrained backbone.
-
-### Why Macro F1?
-
-Accuracy can hide poor performance on smaller classes. Macro F1 gives each class equal importance and is therefore useful for model selection on imbalanced multi-class data.
-
-### Why inverse-square-root class weighting?
-
-Direct inverse-frequency weighting can become excessively aggressive for rare classes. Inverse-square-root weighting provides a softer correction.
-
-### Why S3?
-
-The model artifact is independent from the application image. A model can therefore be replaced without embedding a large checkpoint directly into the source repository or Docker build context.
-
-### Why Docker?
-
-Docker gives the inference service a reproducible runtime and makes local-to-cloud deployment more consistent.
-
-### Why EC2?
-
-EC2 provides direct control over the runtime, Docker environment, networking, and IAM integration.
-
-### Why health-gated deployment?
-
-A container that starts successfully is not necessarily a working ML service. The deployment therefore verifies that the API is responding **and that the model is actually loaded**.
-
----
-
-# 📦 Reproducibility
-
-The training pipeline uses:
-
-```text
-SEED = 42
-```
-
-and records important checkpoint metadata.
-
-For serious experiment reproduction, record:
-
-```text
-Dataset version
-   +
-Git commit
-   +
-Python/dependency versions
-   +
-Training configuration
-   +
-Model checkpoint
-```
-
-The checkpoint itself contains the class mapping and preprocessing metadata required by the serving pipeline.
-
----
-
-# ⚠️ Limitations
-
-This system is a **closed-set image classifier** for the classes represented in the training data. It is not a general-purpose cultural understanding model.
-
-Current limitations include:
-
-- performance depends on dataset quality and diversity
-- the test split does not currently contain examples for every model class
-- softmax confidence is not calibrated probability
-- the uncertainty mechanism is threshold-based rather than a formal OOD model
-- predictions outside the learned class distribution may still be assigned to a known class
+- the dataset is relatively limited for a 24-class cultural recognition problem
+- the test set lacks `naugedi`
+- some classes have visually similar features
+- performance depends on image quality, pose, lighting, and background
 - CPU inference is slower than GPU inference
-- AWS/S3 access is required during production startup
-- the model is currently optimized for a fixed 24-class label space and the current test split does not cover all 24 classes
+- the confidence threshold is not calibrated
+- the uncertainty mechanism is not a formal OOD detector
+- the model is designed for a fixed 24-class label space
+- AWS/S3 availability is required during production startup
 
-These limitations are documented deliberately so that benchmark numbers are not overstated.
+### Future improvements
 
----
-
-# 🚧 Future Roadmap
-
-Potential improvements:
-
-- [ ] Add complete test coverage for all 24 classes
+- [ ] Add test examples for all 24 classes
+- [ ] Collect a larger and more diverse dataset
 - [ ] Calibrate confidence scores
 - [ ] Add a dedicated OOD detection method
-- [ ] Add automated API integration tests
 - [ ] Add latency and throughput benchmarks
 - [ ] Add model versioning
 - [ ] Add experiment tracking
 - [ ] Add dataset versioning
 - [ ] Add model monitoring
-- [ ] Quantize the model for faster CPU inference
-- [ ] Add GPU inference where appropriate
-- [ ] Add HTTPS behind a production reverse proxy
-- [ ] Add infrastructure-as-code for AWS
-- [ ] Add blue/green or canary deployment
-- [ ] Add automatic rollback on failed deployment
-- [ ] Add API authentication/rate limiting for public production use
+- [ ] Optimize CPU inference
+- [ ] Add GPU deployment where appropriate
+- [ ] Add HTTPS and reverse proxy
+- [ ] Add infrastructure-as-code
+- [ ] Add deployment rollback
+- [ ] Add API authentication and rate limiting
 
 ---
 
-# 🛠️ Technology Stack
+# 35. Technology Stack
 
 | Layer | Technology |
 |---|---|
 | Language | Python 3.10+ |
 | Deep Learning | PyTorch |
 | Computer Vision | Torchvision + Pillow |
-| Architecture | ResNet50 |
+| Model | ResNet50 Custom V4 |
 | Metrics | scikit-learn |
 | API | FastAPI |
-| ASGI Server | Uvicorn |
+| ASGI server | Uvicorn |
 | Validation | Pydantic |
 | AWS SDK | boto3 |
-| Model Storage | Amazon S3 |
+| Model storage | Amazon S3 |
 | Compute | Amazon EC2 |
 | Containerization | Docker |
 | CI/CD | GitHub Actions |
-| Dataset Format | PyTorch ImageFolder |
+| Dataset | PyTorch ImageFolder |
 
 ---
 
-# 🌟 Why This Project Matters
+# 36. Why This Project Matters
 
-This project demonstrates the full lifecycle of a machine-learning application:
+This project demonstrates an end-to-end ML engineering workflow:
 
 ```text
-ML Research
-    ↓
 Dataset Engineering
-    ↓
+       ↓
+Computer Vision
+       ↓
 Transfer Learning
-    ↓
-Fine-Tuning
-    ↓
-Evaluation
-    ↓
+       ↓
+Custom Neural-Network Architecture
+       ↓
+Two-Stage Fine-Tuning
+       ↓
+Model Evaluation
+       ↓
 Model Packaging
-    ↓
-API Engineering
-    ↓
-Containerization
-    ↓
-Cloud Storage
-    ↓
-Cloud Deployment
-    ↓
-Automated CI/CD
-    ↓
-Production Health Verification
+       ↓
+FastAPI
+       ↓
+Docker
+       ↓
+Amazon S3
+       ↓
+Amazon EC2
+       ↓
+GitHub Actions
+       ↓
+Health-Gated Deployment
 ```
 
-It therefore serves as a portfolio project demonstrating **computer vision + machine learning engineering + backend API development + Docker + AWS + deployment automation** in one system.
+It demonstrates practical experience across:
+
+- Computer Vision
+- Deep Learning
+- Transfer Learning
+- PyTorch
+- Model evaluation
+- FastAPI
+- Docker
+- AWS
+- S3
+- EC2
+- CI/CD
+- Production-oriented ML engineering
 
 ---
 
-# 🔗 Project Links
+# 37. Project Links
 
-**Repository**
+Repository:
 
 https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition
 
-**API documentation when deployed**
+When the EC2 service is running:
 
 ```text
-/docs
-/redoc
+Swagger:
+http://52.65.181.90:9000/docs
+
+Health:
+http://52.65.181.90:9000/health
+
+Model information:
+http://52.65.181.90:9000/model-info
+
+OpenAPI:
+http://52.65.181.90:9000/openapi.json
 ```
+
+> Availability of the EC2 endpoint depends on the current instance, networking, and container state.
 
 ---
 
-# 👨‍💻 Author
+# 38. Author
 
 ## Aayush Oli
 
@@ -1505,14 +1312,14 @@ AI/ML Engineer in training focused on:
 
 ---
 
-# 📄 License
+# 39. License
 
 A formal open-source license has not yet been selected for this repository.
 
-If this project is intended for public reuse, add an appropriate license such as MIT before presenting it as an open-source project.
+If the project is intended for public reuse, add an appropriate license before presenting it as an open-source project.
 
 ---
 
 <p align="center">
-  <b>🇳🇵 Built to preserve, understand, and digitally recognize Nepal's cultural heritage.</b>
+  <b>🇳🇵 Built to digitally recognize and preserve Nepal's cultural heritage.</b>
 </p>
