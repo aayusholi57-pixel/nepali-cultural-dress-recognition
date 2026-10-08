@@ -46,6 +46,15 @@ GitHub Actions CI/CD
 
 The trained model recognizes **24 target classes** and returns ranked predictions with confidence scores. If the highest confidence falls below the configured threshold, the API reports the result as **uncertain** rather than presenting it as a confident classification.
 
+### Current repository status
+
+- **Production benchmark:** V3
+- **Experimental architecture:** V4
+- **Deployment target:** Amazon EC2 + Docker
+- **Model storage:** Amazon S3
+- **CI/CD:** GitHub Actions deployment workflow on pushes to `main`
+- **Live hosting:** this README documents the deployment configuration; it does **not** claim continuous live availability, which depends on the current EC2 instance and container state.
+
 ---
 
 ## ✨ Highlights
@@ -476,7 +485,7 @@ This V3 record supersedes the older benchmark numbers previously documented in t
 
 V4 was developed as an **experimental architecture** following the mentor-guided design requirement: keep ResNet50 as the pretrained feature extractor, then add custom convolutional and linear layers before the final 24-class classifier.
 
-> **Production status:** V4 is **not** the production benchmark. V3 remains the production model because V3 achieves higher test performance. V4 is retained as a documented architecture experiment and demonstrates custom neural-network layers on top of a pretrained ResNet50 backbone.
+> **Production status:** V4 is **not** the production benchmark. V3 remains the production model because V3 achieves higher test performance. V4 is retained as a reproducible architecture experiment. V4 is retained as a documented architecture experiment and demonstrates custom neural-network layers on top of a pretrained ResNet50 backbone.
 
 ## V4 Architecture
 
@@ -899,7 +908,7 @@ Container: 8000
 
 # ☁️ Amazon EC2 Deployment
 
-The production deployment runs the Dockerized FastAPI service on **Amazon EC2**.
+The deployment configuration runs the Dockerized FastAPI service on **Amazon EC2**.
 
 High-level architecture:
 
@@ -928,10 +937,10 @@ High-level architecture:
 
 The deployment workflow:
 
-1. Checks out the latest `main` branch
-2. Connects to EC2
+1. Checks out the workflow repository on the GitHub Actions runner
+2. Connects to EC2 using SSH
 3. Removes the previous application container
-4. Clones the current repository
+4. Clones the latest `main` branch on EC2
 5. Verifies required files
 6. Verifies deployment model configuration
 7. Builds the Docker image
@@ -1104,7 +1113,7 @@ nepali-cultural-dress-recognition/
 │   ├── evaluate_v4.py              # V4 test evaluation
 │   ├── test_v4_model.py            # V4 architecture tests
 │   ├── train_v4.py                 # V4 two-stage training
-│   └── v4_model.py                 # V4 custom ResNet50 architecture
+│   ├── v4_model.py                 # V4 custom ResNet50 architecture
 │   ├── model.py                    # ResNet50 architecture
 │   ├── train.py                    # Two-phase training
 │   └── utils.py                    # Reserved utility module
