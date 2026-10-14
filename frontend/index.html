@@ -3,68 +3,88 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101a2b">
-  <meta name="description" content="Explore Nepali cultural attire with an AI-powered image recognition demo.">
-  <title>Nepali Cultural Dress Recognition</title>
-  <link rel="stylesheet" href="./styles.css">
+  <meta name="theme-color" content="#f7f5f0">
+  <meta name="description" content="Recognize traditional Nepali cultural attire with a ResNet50 computer vision model.">
+  <title>Nepali Heritage AI — Dress Recognition</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#" aria-label="Nepali Heritage AI home"><span class="brand-mark">N</span><span>HERITAGE<span class="brand-muted"> / AI</span></span></a>
-    <a class="github-link" href="https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition" target="_blank" rel="noreferrer">View source ↗</a>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Nepali Heritage AI home">
+      <span class="brand-mark">N</span>
+      <span class="brand-copy">NEPALI HERITAGE <span>AI STUDIO</span></span>
+    </a>
+    <div class="header-right">
+      <span class="service-status"><span class="status-dot" id="healthDot"></span><span id="healthText">Checking model…</span></span>
+      <a class="source-link" href="https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition" target="_blank" rel="noreferrer">View source ↗</a>
+    </div>
   </header>
+
   <main>
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow"><span class="pulse"></span> COMPUTER VISION · CULTURAL HERITAGE</p>
-        <h1>Discover Nepal's<br><span>cultural attire.</span></h1>
-        <p class="intro">An AI-powered exploration of traditional Nepali dress. Upload an image to prepare a recognition request for the project's model API.</p>
-        <div class="hero-tags"><span>PyTorch · ResNet50</span><span>24 supported classes</span><span>FastAPI</span></div>
-      </div>
-      <div class="hero-art" aria-label="Decorative Nepal-inspired geometric artwork">
-        <div class="sun"></div><div class="mountain mountain-back"></div><div class="mountain mountain-front"></div>
-        <div class="art-label"><span>NEPAL</span><span>Heritage, understood through AI.</span></div>
-      </div>
+    <section class="intro">
+      <p class="eyebrow">COMPUTER VISION · CULTURAL PRESERVATION</p>
+      <h1>Tradition, seen<br><span>through AI.</span></h1>
+      <p class="intro-copy">Explore Nepali cultural attire with an image recognition model. Upload a photo and let the model return its best matches.</p>
+      <div class="tech-list"><span>ResNet50 Custom V4</span><span>24 classes</span><span>FastAPI</span></div>
     </section>
-    <section class="workspace" id="recognize">
-      <div class="section-heading"><div><p class="eyebrow">THE RECOGNITION STUDIO</p><h2>Try an image</h2></div><span class="step-label">01 <i>/</i> UPLOAD</span></div>
-      <div class="studio-grid">
-        <section class="upload-panel panel">
-          <label class="field-label" for="imageInput">Choose a clothing image</label>
+
+    <section class="workspace" aria-label="Dress recognition tool">
+      <div class="workspace-heading">
+        <div><p class="eyebrow">RECOGNITION WORKSPACE</p><h2>Analyze an image</h2></div>
+        <span class="step-count">01 <span>/</span> UPLOAD</span>
+      </div>
+
+      <div class="workspace-grid">
+        <section class="card upload-card">
+          <div class="card-heading"><span class="number">01</span><div><h3>Choose an image</h3><p>Use a clear photo of traditional attire or an ornament.</p></div></div>
           <label class="dropzone" id="dropzone" for="imageInput">
-            <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp">
-            <span class="upload-icon">↑</span>
-            <strong id="uploadTitle">Drop an image here</strong>
-            <span id="uploadHint">or click to browse · JPG, PNG, WEBP</span>
-            <img id="preview" alt="Selected clothing image preview" hidden>
+            <input id="imageInput" type="file" accept="image/jpeg,image/png,image/webp">
+            <span class="upload-symbol" aria-hidden="true">↑</span>
+            <strong id="uploadTitle">Drop your image here</strong>
+            <span class="drop-hint" id="uploadHint">or browse files from your device</span>
+            <span class="file-types">JPG · PNG · WEBP · MAX 5 MB</span>
+            <img id="preview" alt="Preview of the selected image" hidden>
           </label>
-          <div class="file-meta" id="fileMeta">No image selected</div>
-          <label class="field-label" for="apiUrl">Model API endpoint</label>
-          <input class="text-input" id="apiUrl" type="url" placeholder="https://your-api.example.com/predict" autocomplete="url">
-          <p class="helper">Enter the exact prediction endpoint exposed by your deployed FastAPI app. The UI does not change your model or dataset.</p>
-          <button class="primary-button" id="analyzeButton" disabled>Analyze image <span>→</span></button>
-          <p class="status" id="status" role="status" aria-live="polite"></p>
+          <div class="selected-file" id="fileMeta">No image selected</div>
+          <div class="actions">
+            <button class="button button-primary" id="analyzeButton" type="button" disabled>Recognize attire <span aria-hidden="true">→</span></button>
+            <button class="button button-quiet" id="clearButton" type="button" disabled>Clear</button>
+          </div>
+          <p class="status-message" id="status" role="status" aria-live="polite"></p>
         </section>
-        <section class="result-panel panel">
-          <div class="result-top"><span class="result-icon">✳</span><span class="step-label">02 <i>/</i> RESULT</span></div>
-          <p class="eyebrow">MODEL OUTPUT</p>
-          <h3 id="resultTitle">Your result will appear here</h3>
-          <p class="result-description" id="resultDescription">Select an image and connect your model endpoint to see its response.</p>
-          <div class="result-divider"></div>
-          <div class="result-row"><span>Prediction</span><strong id="prediction">—</strong></div>
-          <div class="result-row"><span>Confidence</span><strong id="confidence">—</strong></div>
-          <div class="result-row"><span>API status</span><strong id="apiStatus">Not connected</strong></div>
-          <details class="raw-details"><summary>View raw API response</summary><pre id="rawResponse">No response yet.</pre></details>
+
+        <section class="card results-card" aria-live="polite">
+          <div class="card-heading"><span class="number">02</span><div><h3>Recognition result</h3><p>Predictions from your connected model.</p></div></div>
+          <div class="result-empty" id="emptyState">
+            <span class="result-mark" aria-hidden="true">✳</span>
+            <strong>Your result will appear here</strong>
+            <p>Choose an image, then select <b>Recognize attire</b>.</p>
+          </div>
+          <div id="resultContent" hidden>
+            <div class="prediction-summary">
+              <span class="result-kicker" id="resultKicker">TOP MATCH</span>
+              <h4 id="resultTitle">—</h4>
+              <p id="resultDescription">Model prediction</p>
+              <div class="confidence-line"><span>Confidence</span><strong id="confidence">—</strong></div>
+              <div class="confidence-track"><span id="confidenceBar"></span></div>
+            </div>
+            <div class="other-matches" id="otherMatches"></div>
+          </div>
+          <div class="result-footer"><span class="status-dot" id="apiDot"></span><span id="apiStatus">Waiting for an image</span><a href="/docs" target="_blank" rel="noreferrer">API docs ↗</a></div>
+          <details class="raw-details"><summary>Technical response</summary><pre id="rawResponse">No prediction has been requested yet.</pre></details>
         </section>
       </div>
-      <p class="privacy-note">Your selected image is sent only to the API endpoint you provide. Avoid uploading private or sensitive images.</p>
+      <p class="privacy-note">Images are sent to this app's prediction API. Results are model estimates and may be uncertain, especially for unclear or unfamiliar images.</p>
     </section>
+
     <section class="about">
-      <p class="eyebrow">BUILT WITH PURPOSE</p><h2>Culture meets computer vision.</h2>
-      <p>This project explores image-based recognition of Nepali cultural attire using a YOLO-based crop-preparation workflow and a ResNet50 classifier. Predictions depend on image quality and model limitations; results should be treated as model estimates, not definitive cultural identification.</p>
+      <p class="eyebrow">THE PROJECT</p>
+      <h2>Technology with cultural purpose.</h2>
+      <p>This project combines a YOLO-based crop-preparation workflow with a ResNet50 classifier to explore Nepali traditional clothing and ornaments. The model recognizes visual patterns; it does not replace cultural expertise.</p>
     </section>
   </main>
-  <footer><span>© <span id="year"></span> Aayush Oli</span><span>Built to explore and celebrate Nepali heritage.</span><a href="https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition" target="_blank" rel="noreferrer">GitHub ↗</a></footer>
-  <script src="./app.js"></script>
+
+  <footer><span>© <span id="year"></span> Aayush Oli</span><span>Made to celebrate Nepali heritage.</span><a href="https://github.com/aayusholi57-pixel/nepali-cultural-dress-recognition" target="_blank" rel="noreferrer">GitHub ↗</a></footer>
 </body>
 </html>
