@@ -1,68 +1,225 @@
-const imageInput=document.getElementById('imageInput');
-const preview=document.getElementById('preview');
-const dropzone=document.getElementById('dropzone');
-const analyzeButton=document.getElementById('analyzeButton');
-const apiUrl=document.getElementById('apiUrl');
-const statusText=document.getElementById('status');
-let selectedFile=null;
-document.getElementById('year').textContent=new Date().getFullYear();
-function setStatus(message,isError=false){statusText.textContent=message;statusText.style.color=isError?'#ffaaa5':'var(--teal)'}
-function chooseFile(file){
-  if(!file)return;
-  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){setStatus('Please choose a JPG, PNG, or WEBP image.',true);return}
-  if(file.size>10*1024*1024){setStatus('Image is larger than 10 MB. Please choose a smaller file.',true);return}
-  selectedFile=file;preview.src=URL.createObjectURL(file);preview.hidden=false;
-  document.getElementById('uploadTitle').textContent=file.name;
-  document.getElementById('uploadHint').textContent='Image ready for analysis';
-  document.getElementById('fileMeta').textContent=(file.size/1024/1024).toFixed(2)+' MB · '+file.type;
-  analyzeButton.disabled=false;setStatus('');
+const $ = (id) => document.getElementById(id);
+
+const imageInput = $("imageInput");
+const dropzone = $("dropzone");
+const preview = $("preview");
+const analyzeButton = $("analyzeButton");
+const clearButton = $("clearButton");
+const statusText = $("status");
+
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+let selectedFile = null;
+let previewUrl = null;
+let isAnalyzing = false;
+
+$("year").textContent = new Date().getFullYear();
+
+function setStatus(message, isError = false) {
+  statusText.textContent = message;
+  statusText.classList.toggle("error", isError);
 }
-imageInput.addEventListener('change',e=>chooseFile(e.target.files[0]));
-['dragenter','dragover'].forEach(type=>dropzone.addEventListener(type,e=>{e.preventDefault();dropzone.classList.add('dragover')}));
-['dragleave','drop'].forEach(type=>dropzone.addEventListener(type,e=>{e.preventDefault();dropzone.classList.remove('dragover')}));
-dropzone.addEventListener('drop',e=>chooseFile(e.dataTransfer.files[0]));
-function findPrediction(data){
-  if(!data||typeof data!=='object')return {label:null,confidence:null};
-  const labelKeys=['predicted_class','prediction','class_name','label','class','predicted_label'];
-  const confidenceKeys=['confidence','confidence_score','probability','score'];
-  let label=null,confidence=null;
-  for(const key of labelKeys){if(typeof data[key]==='string'||typeof data[key]==='number'){label=String(data[key]);break}}
-  for(const key of confidenceKeys){if(typeof data[key]==='number'){confidence=data[key];break}}
-  if(!label&&Array.isArray(data.predictions)&&data.predictions.length){
-    const first=data.predictions[0];
-    if(typeof first==='string')label=first;
-    else if(first&&typeof first==='object'){label=first.class_name||first.label||first.class||null;confidence=first.confidence??first.score??confidence}
+
+function setApiStatus(message, state = "idle") {
+  $("apiStatus").textContent = message;
+  $("apiDot").className = "status-dot" + (state === "ok" ? " is-online" : state === "error" ? " is-error" : "");
+}
+
+function setHealth(healthy, message) {
+  $("healthText").textContent = message;
+  $("healthDot").className = "status-dot" + (healthy ? " is-online" : " is-error");
+}
+
+function setBusy(busy) {
+  isAnalyzing = busy;
+  analyzeButton.disabled = busy || !selectedFile;
+  clearButton.disabled = busy || !selectedFile;
+  analyzeButton.innerHTML = busy
+    ? '<span class="spinner" aria-hidden="true"></span> Analyzing image…'
+    : 'Recognize attire <span aria-hidden="true">→</span>';
+}
+
+function chooseFile(file) {
+  if (!file) return;
+
+  if (!ALLOWED_TYPES.has(file.type)) {
+    setStatus("Please choose a JPG, PNG, or WEBP image.", true);
+    return;
   }
-  return {label,confidence};
+  if (file.size > MAX_FILE_SIZE) {
+    setStatus("This image is larger than 5 MB. Please choose a smaller file.", true);
+    return;
+  }
+  if (file.size === 0) {
+    setStatus("This file is empty. Please choose another image.", true);
+    return;
+  }
+
+  selectedFile = file;
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(file);
+  preview.src = previewUrl;
+  preview.hidden = false;
+  $("uploadTitle").textContent = file.name;
+  $("uploadHint").textContent = "Image ready to analyze";
+  $("fileMeta").textContent = (file.size / 1024 / 1024).toFixed(2) + " MB · " + file.type.replace("image/", "").toUpperCase();
+  analyzeButton.disabled = false;
+  clearButton.disabled = false;
+  setStatus("");
+  setApiStatus("Image ready — waiting to analyze");
+  $("emptyState").hidden = false;
+  $("resultContent").hidden = true;
+  $("emptyState").querySelector("strong").textContent = "Ready when you are";
+  $("emptyState").querySelector("p").textContent = "Select Recognize attire to run the model.";
 }
-analyzeButton.addEventListener('click',async()=>{
-  if(!selectedFile)return;
-  const endpoint=apiUrl.value.trim();
-  if(!endpoint){setStatus('Enter your deployed prediction endpoint first.',true);apiUrl.focus();return}
-  let parsed;
-  try{parsed=new URL(endpoint)}catch{setStatus('Please enter a valid full URL, including https://.',true);return}
-  if(!['http:','https:'].includes(parsed.protocol)){setStatus('Endpoint must use HTTP or HTTPS.',true);return}
-  analyzeButton.disabled=true;analyzeButton.textContent='Analyzing…';
-  document.getElementById('apiStatus').textContent='Requesting…';
-  try{
-    const body=new FormData();body.append('file',selectedFile);
-    const response=await fetch(endpoint,{method:'POST',body});
-    const raw=await response.text();let data;
-    try{data=JSON.parse(raw)}catch{data={response:raw}};
-    document.getElementById('rawResponse').textContent=JSON.stringify(data,null,2);
-    if(!response.ok)throw new Error('API returned HTTP '+response.status+'. Check the endpoint and request field name.');
-    const result=findPrediction(data);
-    document.getElementById('resultTitle').textContent=result.label||'Response received';
-    document.getElementById('resultDescription').textContent=result.label?'Prediction returned by your model API. Verify the label against your model’s class mapping.':'The API responded successfully, but its JSON fields were not recognized automatically. See the raw response below.';
-    document.getElementById('prediction').textContent=result.label||'See raw response';
-    document.getElementById('confidence').textContent=result.confidence===null?'Not provided':(result.confidence<=1?(result.confidence*100).toFixed(2)+'%':result.confidence.toFixed(2));
-    document.getElementById('apiStatus').textContent='HTTP '+response.status;
-    setStatus('API response received.');
-  }catch(error){
-    document.getElementById('apiStatus').textContent='Request failed';
-    document.getElementById('resultTitle').textContent='Could not complete prediction';
-    document.getElementById('resultDescription').textContent='The API request failed. Check the endpoint, server status, CORS settings, and expected image field.';
-    document.getElementById('rawResponse').textContent=error.message;
-    setStatus(error.message+' If this is a browser CORS error, enable CORS on the API for your frontend origin.',true);
-  }finally{analyzeButton.disabled=!selectedFile;analyzeButton.innerHTML='Analyze image <span>→</span>'}
+
+function clearSelection() {
+  if (isAnalyzing) return;
+  selectedFile = null;
+  imageInput.value = "";
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = null;
+  preview.removeAttribute("src");
+  preview.hidden = true;
+  $("uploadTitle").textContent = "Drop your image here";
+  $("uploadHint").textContent = "or browse files from your device";
+  $("fileMeta").textContent = "No image selected";
+  analyzeButton.disabled = true;
+  clearButton.disabled = true;
+  setStatus("");
+  setApiStatus("Waiting for an image");
+  $("emptyState").hidden = false;
+  $("resultContent").hidden = true;
+  $("emptyState").querySelector("strong").textContent = "Your result will appear here";
+  $("emptyState").querySelector("p").innerHTML = 'Choose an image, then select <b>Recognize attire</b>.';
+  $("rawResponse").textContent = "No prediction has been requested yet.";
+}
+
+imageInput.addEventListener("change", (event) => chooseFile(event.target.files[0]));
+
+["dragenter", "dragover"].forEach((eventName) => {
+  dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
 });
+["dragleave", "drop"].forEach((eventName) => {
+  dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("dragover");
+  });
+});
+dropzone.addEventListener("drop", (event) => {
+  const file = event.dataTransfer?.files?.[0];
+  chooseFile(file);
+});
+clearButton.addEventListener("click", clearSelection);
+
+function showResults(data) {
+  $("emptyState").hidden = true;
+  $("resultContent").hidden = false;
+
+  const confidence = Number(data.confidence);
+  const confidenceIsValid = Number.isFinite(confidence);
+  const confidenceLabel = confidenceIsValid ? confidence.toFixed(2) + "%" : "Not available";
+  const confidenceWidth = confidenceIsValid ? Math.max(0, Math.min(100, confidence)) : 0;
+
+  $("resultTitle").textContent = data.top_prediction || "No class returned";
+  $("resultDescription").textContent = data.is_out_of_distribution
+    ? "The model is uncertain about this image. Treat this prediction with caution."
+    : "Best matching class returned by the model.";
+  $("resultKicker").textContent = data.is_out_of_distribution ? "UNCERTAIN MATCH" : "TOP MATCH";
+  $("confidence").textContent = confidenceLabel;
+  $("confidenceBar").style.width = confidenceWidth + "%";
+
+  const matches = Array.isArray(data.top_k) ? data.top_k : [];
+  const otherMatches = $("otherMatches");
+  otherMatches.replaceChildren();
+  if (matches.length > 1) {
+    const heading = document.createElement("p");
+    heading.className = "matches-heading";
+    heading.textContent = "Other likely matches";
+    otherMatches.appendChild(heading);
+
+    matches.slice(1, 3).forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "match-row";
+      const label = document.createElement("span");
+      label.textContent = item.class_name || "Unknown class";
+      const score = document.createElement("strong");
+      const value = Number(item.confidence);
+      score.textContent = Number.isFinite(value) ? value.toFixed(2) + "%" : "—";
+      row.append(label, score);
+      otherMatches.appendChild(row);
+    });
+  }
+  $("rawResponse").textContent = JSON.stringify(data, null, 2);
+}
+
+async function checkBackend() {
+  try {
+    const response = await fetch("/health", { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const data = await response.json();
+    if (data.model_loaded) {
+      setHealth(true, "Model ready");
+      setApiStatus("Connected to model", "ok");
+    } else {
+      setHealth(false, "Model not loaded");
+      setApiStatus("API online, model not loaded", "error");
+    }
+  } catch {
+    setHealth(false, "API unavailable");
+    setApiStatus("Could not reach the backend", "error");
+  }
+}
+
+analyzeButton.addEventListener("click", async () => {
+  if (!selectedFile || isAnalyzing) return;
+
+  setBusy(true);
+  setStatus("Sending image to the model…");
+  setApiStatus("Predicting…");
+  $("rawResponse").textContent = "Waiting for the model response…";
+
+  try {
+    const body = new FormData();
+    body.append("file", selectedFile, selectedFile.name);
+
+    // Relative URL means the browser uses this same FastAPI server—no manual endpoint or CORS setup.
+    const response = await fetch("/predict", { method: "POST", body });
+    const raw = await response.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      data = { detail: raw || "The server returned an empty response." };
+    }
+
+    if (!response.ok) {
+      const detail = typeof data.detail === "string" ? data.detail : "Request failed (HTTP " + response.status + ").";
+      throw new Error(detail);
+    }
+
+    showResults(data);
+    setApiStatus(data.is_out_of_distribution ? "Prediction returned — uncertain" : "Prediction complete", "ok");
+    setStatus(data.is_out_of_distribution
+      ? "Prediction complete, but the model is not confident enough for a reliable match."
+      : "Done — your prediction is ready.");
+  } catch (error) {
+    $("emptyState").hidden = false;
+    $("resultContent").hidden = true;
+    $("emptyState").querySelector("strong").textContent = "Prediction could not be completed";
+    $("emptyState").querySelector("p").textContent = error.message || "Check that the backend and model are running.";
+    $("rawResponse").textContent = error.message || "Unknown error";
+    setApiStatus("Prediction failed", "error");
+    setStatus(error.message || "Something went wrong. Please try again.", true);
+    if (error instanceof TypeError) {
+      setStatus("Could not reach the API. Check the Docker container and try again.", true);
+    }
+  } finally {
+    setBusy(false);
+  }
+});
+
+checkBackend();
